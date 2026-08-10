@@ -1,0 +1,46 @@
+[package]
+name = "wgpu-tensor"
+version = "0.1.0"
+edition = "2024"
+exclude = ["rust-toolchain.toml"]
+
+[dependencies]
+bytemuck = { version = "1", features = ["derive"] }
+shaders = { version = "0.1.0", path = "shaders" }
+wgpu = { version = "30.0.0", default-features = false, features = ["wgsl"] }
+
+[dev-dependencies]
+wgpu = { version = "30.0.0", default-features = false }
+pollster = "1.0.1"
+
+[workspace]
+resolver = "3"
+members = ["shaders"]
+
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+wgpu = { version = "30.0.0", default-features = false, features = [
+    "std",
+    "parking_lot",
+    "dx12",
+] }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dev-dependencies]
+wgpu = { version = "30.0.0", default-features = false, features = [
+    "std",
+    "parking_lot",
+    "metal",
+] }
+
+[target.'cfg(all(not(target_os = "windows"), not(any(target_os = "macos", target_os = "ios")), not(target_arch = "wasm32")))'.dev-dependencies]
+wgpu = { version = "30.0.0", default-features = false, features = [
+    "std",
+    "parking_lot",
+    "vulkan",
+] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wgpu = { version = "30.0.0", default-features = false, features = [
+    "std",
+    "parking_lot",
+    "webgpu",
+] }

@@ -1,0 +1,13 @@
+{
+    "rust-analyzer.vfs.extraIncludes": [
+        "/root/wgpu-tensor/shaders/output"
+    ],
+    "rust-analyzer.cargo.cfgs": [
+        "debug_assertions",
+        "miri",
+        "spirv"
+    ],
+    "rust-analyzer.check.extraEnv": {
+        "RUSTFLAGS": "--cfg=spirv"
+    }
+}
