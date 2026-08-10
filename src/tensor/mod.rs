@@ -3,7 +3,7 @@ use std::ops::Mul;
 use bytemuck::cast_slice;
 use shaders::Shape;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferBindingType, BufferDescriptor, BufferUsages, COPY_BUFFER_ALIGNMENT, ComputePass, Device, ShaderStages};
+use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferBindingType, BufferDescriptor, BufferUsages, COPY_BUFFER_ALIGNMENT, ComputePass, Device};
 pub use shape::IntoShape;
 
 use crate::TensorContext;

@@ -1,6 +1,6 @@
-use wgpu::ComputePipeline;
 
 use crate::{Tensor, TensorEncoder};
+use wgpu::ComputePipeline;
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/shaders/output/generated.rs"));
 

@@ -1,6 +1,5 @@
 pub const BASELINE_FEATURES: wgpu::Features = wgpu::Features::empty();
-pub const ALL_FEATURES: wgpu::Features = (wgpu::Features::empty())
-    .union(wgpu::Features::SHADER_INT64);
+pub const ALL_FEATURES: wgpu::Features = wgpu::Features::empty();
 pub const BASELINE_LIMITS: wgpu::Limits = wgpu::Limits {
     max_texture_dimension_1d: 8192,
     max_texture_dimension_2d: 8192,
@@ -62,8 +61,10 @@ pub const BASELINE_LIMITS: wgpu::Limits = wgpu::Limits {
 };
 pub const BASELINE_DOWNLEVEL_FLAGS: wgpu::DownlevelFlags = wgpu::DownlevelFlags::COMPUTE_SHADERS
     .union(wgpu::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED);
+#[allow(unused)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BindingSize(wgpu::BufferSize);
+#[allow(unused)]
 impl BindingSize {
     pub const fn of<T>() -> Self {
         let size = core::mem::size_of::<T>() as u64;
@@ -73,6 +74,7 @@ impl BindingSize {
         Self(size)
     }
 }
+#[allow(unused)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BindingShape {
     Buffer { ty: wgpu::BufferBindingType, has_dynamic_offset: bool, size: BindingSize },
@@ -89,6 +91,7 @@ pub enum BindingShape {
     },
     ExternalTexture,
 }
+#[allow(unused)]
 impl BindingShape {
     fn binding_type(self) -> wgpu::BindingType {
         match self {
@@ -118,10 +121,12 @@ impl BindingShape {
         }
     }
 }
+#[allow(unused)]
 pub struct BindGroupLayoutPool {
     device: wgpu::Device,
     layouts: std::collections::HashMap<Vec<BindingShape>, wgpu::BindGroupLayout>,
 }
+#[allow(unused)]
 impl BindGroupLayoutPool {
     pub fn new(device: &wgpu::Device) -> Option<Self> {
         if !device.features().contains(BASELINE_FEATURES)
@@ -166,135 +171,93 @@ pub mod shaders {
         #[allow(unused_imports)]
         use super::{BindGroupLayoutPool, BindingShape, BindingSize};
         pub fn main(pool: &mut BindGroupLayoutPool) -> wgpu::ComputePipeline {
-            if pool
+            let bind_group_layout_0 = pool
+                .get(
+                    &[
+                        BindingShape::Buffer {
+                            ty: wgpu::BufferBindingType::Storage {
+                                read_only: true,
+                            },
+                            has_dynamic_offset: false,
+                            size: BindingSize(wgpu::BufferSize::new(4u64).unwrap()),
+                        },
+                        BindingShape::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            size: BindingSize(wgpu::BufferSize::new(32u64).unwrap()),
+                        },
+                    ],
+                )
+                .clone();
+            let bind_group_layout_1 = pool
+                .get(
+                    &[
+                        BindingShape::Buffer {
+                            ty: wgpu::BufferBindingType::Storage {
+                                read_only: true,
+                            },
+                            has_dynamic_offset: false,
+                            size: BindingSize(wgpu::BufferSize::new(4u64).unwrap()),
+                        },
+                        BindingShape::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            size: BindingSize(wgpu::BufferSize::new(32u64).unwrap()),
+                        },
+                    ],
+                )
+                .clone();
+            let bind_group_layout_2 = pool
+                .get(
+                    &[
+                        BindingShape::Buffer {
+                            ty: wgpu::BufferBindingType::Storage {
+                                read_only: false,
+                            },
+                            has_dynamic_offset: false,
+                            size: BindingSize(wgpu::BufferSize::new(4u64).unwrap()),
+                        },
+                        BindingShape::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            size: BindingSize(wgpu::BufferSize::new(32u64).unwrap()),
+                        },
+                    ],
+                )
+                .clone();
+            let bind_group_layouts: &[Option<&wgpu::BindGroupLayout>] = &[
+                Some(&bind_group_layout_0),
+                Some(&bind_group_layout_1),
+                Some(&bind_group_layout_2),
+            ];
+            let pipeline_layout = pool
                 .device
-                .features()
-                .contains((wgpu::Features::empty()).union(wgpu::Features::SHADER_INT64))
-            {
-                {
-                    let bind_group_layout_0 = pool
-                        .get(
-                            &[
-                                BindingShape::Buffer {
-                                    ty: wgpu::BufferBindingType::Storage {
-                                        read_only: true,
-                                    },
-                                    has_dynamic_offset: false,
-                                    size: BindingSize(wgpu::BufferSize::new(4u64).unwrap()),
-                                },
-                            ],
-                        )
-                        .clone();
-                    let bind_group_layout_2 = pool
-                        .get(
-                            &[
-                                BindingShape::Buffer {
-                                    ty: wgpu::BufferBindingType::Storage {
-                                        read_only: false,
-                                    },
-                                    has_dynamic_offset: false,
-                                    size: BindingSize(wgpu::BufferSize::new(4u64).unwrap()),
-                                },
-                            ],
-                        )
-                        .clone();
-                    let bind_group_layouts: &[Option<&wgpu::BindGroupLayout>] = &[
-                        Some(&bind_group_layout_0),
-                        None,
-                        Some(&bind_group_layout_2),
-                    ];
-                    let pipeline_layout = pool
-                        .device
-                        .create_pipeline_layout(
-                            &wgpu::PipelineLayoutDescriptor {
-                                label: Some("add::main"),
-                                bind_group_layouts,
-                                immediate_size: 0u32,
-                            },
-                        );
-                    let shader = pool
-                        .device
-                        .create_shader_module(wgpu::ShaderModuleDescriptor {
-                            label: Some("add::main"),
-                            source: wgpu::ShaderSource::Wgsl(
-                                include_str!("add_main_extended.wgsl").into(),
-                            ),
-                        });
-                    pool.device
-                        .create_compute_pipeline(
-                            &wgpu::ComputePipelineDescriptor {
-                                label: Some("add::main"),
-                                layout: Some(&pipeline_layout),
-                                module: &shader,
-                                entry_point: Some("main"),
-                                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                                cache: None,
-                            },
-                        )
-                }
-            } else {
-                {
-                    let bind_group_layout_0 = pool
-                        .get(
-                            &[
-                                BindingShape::Buffer {
-                                    ty: wgpu::BufferBindingType::Storage {
-                                        read_only: true,
-                                    },
-                                    has_dynamic_offset: false,
-                                    size: BindingSize(wgpu::BufferSize::new(4u64).unwrap()),
-                                },
-                            ],
-                        )
-                        .clone();
-                    let bind_group_layout_2 = pool
-                        .get(
-                            &[
-                                BindingShape::Buffer {
-                                    ty: wgpu::BufferBindingType::Storage {
-                                        read_only: false,
-                                    },
-                                    has_dynamic_offset: false,
-                                    size: BindingSize(wgpu::BufferSize::new(4u64).unwrap()),
-                                },
-                            ],
-                        )
-                        .clone();
-                    let bind_group_layouts: &[Option<&wgpu::BindGroupLayout>] = &[
-                        Some(&bind_group_layout_0),
-                        None,
-                        Some(&bind_group_layout_2),
-                    ];
-                    let pipeline_layout = pool
-                        .device
-                        .create_pipeline_layout(
-                            &wgpu::PipelineLayoutDescriptor {
-                                label: Some("add::main"),
-                                bind_group_layouts,
-                                immediate_size: 0u32,
-                            },
-                        );
-                    let shader = pool
-                        .device
-                        .create_shader_module(wgpu::ShaderModuleDescriptor {
-                            label: Some("add::main"),
-                            source: wgpu::ShaderSource::Wgsl(
-                                include_str!("add_main.wgsl").into(),
-                            ),
-                        });
-                    pool.device
-                        .create_compute_pipeline(
-                            &wgpu::ComputePipelineDescriptor {
-                                label: Some("add::main"),
-                                layout: Some(&pipeline_layout),
-                                module: &shader,
-                                entry_point: Some("main"),
-                                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                                cache: None,
-                            },
-                        )
-                }
-            }
+                .create_pipeline_layout(
+                    &wgpu::PipelineLayoutDescriptor {
+                        label: Some("add::main"),
+                        bind_group_layouts,
+                        immediate_size: 0u32,
+                    },
+                );
+            let shader = pool
+                .device
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("add::main"),
+                    source: wgpu::ShaderSource::Wgsl(
+                        include_str!("add_main.wgsl").into(),
+                    ),
+                });
+            pool.device
+                .create_compute_pipeline(
+                    &wgpu::ComputePipelineDescriptor {
+                        label: Some("add::main"),
+                        layout: Some(&pipeline_layout),
+                        module: &shader,
+                        entry_point: Some("main"),
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        cache: None,
+                    },
+                )
         }
     }
 }
