@@ -1,57 +1,85 @@
-use std::ops::Mul;
+use std::sync::mpsc::Sender;
 
-use bytemuck::cast_slice;
+use bytemuck::{Contiguous, cast_slice};
 use shaders::Shape;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferBindingType, BufferDescriptor, BufferUsages, COPY_BUFFER_ALIGNMENT, ComputePass, Device};
+use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, COPY_BUFFER_ALIGNMENT, ComputePass, Device};
 pub use shape::IntoShape;
+pub(super) use pool::TensorPool;
 
 use crate::TensorContext;
-use crate::pipelines::{BindingShape, BindingSize};
+use crate::pipelines::{BindGroupLayoutPool, BindingShape, BindingSize};
 
 mod shape;
+mod pool;
 
-pub struct Tensor {
-    pub(crate) read_bind_group: BindGroup,
-    pub(crate) write_bind_group: BindGroup,
-    pub(crate) buffer: Buffer,
-    pub(crate) shape: Shape,
+pub struct Tensor<'scope> {
+    sender: Option<&'scope Sender<Tensor<'static>>>,
+    read_bind_group: BindGroup,
+    write_bind_group: BindGroup,
+    shape_buffer: Buffer,
+    buffer: Buffer,
+    shape: Shape
 }
 
-impl Tensor {
-    pub fn new(context: &mut TensorContext, shape: impl IntoShape) -> Tensor {
+impl Tensor<'static> {
+    pub fn new(
+        context: &mut TensorContext,
+        shape: impl IntoShape
+    ) -> Tensor<'static> {
         let shape = shape.shape();
-        let size = shape.into_iter()
-            .map(|x| x as u64)
-            .fold(1, Mul::mul)
-            .mul(size_of::<f32>() as u64)
-            .next_multiple_of(COPY_BUFFER_ALIGNMENT)
-            .max(COPY_BUFFER_ALIGNMENT);
+        Self::create(
+            &mut context.bind_group_layouts,
+            &context.device, shape,
+            Self::buffer_size(shape)
+        )
+    }
+}
 
-        let usage =  BufferUsages::COPY_DST
-                | BufferUsages::COPY_SRC
-                | BufferUsages::STORAGE;
+impl<'scope> Tensor<'scope> {
+    const MIN_TEMPORARY_CAPACITY: BufferAddress = 256;
+    const BUCKETS_PER_OCTAVE: BufferAddress = 4; 
 
-        let buffer = context.device.create_buffer(
+    pub(crate) fn shape_buffer(&self) -> &Buffer {
+        &self.shape_buffer
+    }
+
+    pub(crate) fn data_buffer(&self) -> &Buffer {
+        &self.buffer
+    }
+
+    pub fn shape(&self) -> Shape {
+        self.shape
+    }
+    
+    fn create(
+        bind_group_layouts: &mut BindGroupLayoutPool,
+        device: &Device,
+        shape: Shape,
+        size: BufferSize,
+    ) -> Tensor<'static> {
+        let buffer = device.create_buffer(
             &BufferDescriptor {
-                mapped_at_creation: false,
                 label: None,
-                usage,
-                size
+                size: size.get(),
+                mapped_at_creation: false,
+                usage: BufferUsages::COPY_DST
+                    | BufferUsages::COPY_SRC
+                    | BufferUsages::STORAGE
             }
         );
 
-        let shape_buffer = context.device.create_buffer_init(
+        let shape_buffer = device.create_buffer_init(
             &BufferInitDescriptor {
                 contents: cast_slice(shape.as_slice()),
-                usage: BufferUsages::UNIFORM,
+                usage: BufferUsages::UNIFORM
+                    | BufferUsages::COPY_DST,
                 label: None,
             }
         );
 
         let read_bind_group = Self::create_bind_group(
-            &context.device,
-            context.bind_group_layouts.get(&[
+            device, bind_group_layouts.get(&[
                 BindingShape::Buffer {
                     has_dynamic_offset: false,
                     size: BindingSize::of::<f32>(),
@@ -70,8 +98,7 @@ impl Tensor {
         );
 
         let write_bind_group = Self::create_bind_group(
-            &context.device,
-            context.bind_group_layouts.get(&[
+            device, bind_group_layouts.get(&[
                 BindingShape::Buffer {
                     has_dynamic_offset: false,
                     size: BindingSize::of::<f32>(),
@@ -90,12 +117,25 @@ impl Tensor {
         );
 
         Tensor {
+            sender: None,
             read_bind_group,
             write_bind_group,
+            shape_buffer,
             buffer,
-            shape
+            shape,
         }
     } 
+
+    pub(crate) fn broadcast(&self, other: &Tensor) -> Option<Shape> {
+        let mut shape = self.shape.clone();
+        for (dst, src) in shape.iter_mut().zip(other.shape) {
+            if (*dst == 1 || src == 1) || (*dst == src) {
+                *dst = (*dst).max(src);
+            } else { return None }
+        }
+
+        Some(shape)
+    }
 
     pub(crate) fn bind(
         &self,
@@ -137,10 +177,46 @@ impl Tensor {
         })
     }
 
-    pub(crate) fn data_size(&self) -> usize {
-        self.shape.into_iter()
-            .map(|x| x as usize)
-            .fold(1, Mul::mul)
-            .mul(size_of::<f32>())
+    pub(crate) fn data_size(shape: Shape) -> BufferAddress {
+        shape.into_iter()
+            .map(|x| x as u64)
+            .fold(1, u64::saturating_mul)
+            .saturating_mul(size_of::<f32>() as u64)
+    }
+
+    pub(crate) fn buffer_size(shape: Shape) -> BufferSize {
+        BufferSize::new(
+            Self::data_size(shape)
+                .checked_next_multiple_of(COPY_BUFFER_ALIGNMENT)
+                .unwrap_or(BufferSize::MAX_VALUE)
+        ).unwrap_or(BufferSize::new(COPY_BUFFER_ALIGNMENT).unwrap())
+    }
+
+    fn bucket_size(shape: Shape) -> BufferSize {
+        let required = Self::buffer_size(shape).get()
+            .max(Self::MIN_TEMPORARY_CAPACITY);
+
+        let octave = 1u64 << ((u64::BITS - 1) - required.leading_zeros());
+        let bucket_width = (octave / Self::BUCKETS_PER_OCTAVE)
+            .max(COPY_BUFFER_ALIGNMENT);
+
+        required.checked_next_multiple_of(bucket_width)
+            .map(BufferSize::new).flatten()
+            .unwrap_or(BufferSize::MAX)
+    }
+}
+
+impl<'scope> Drop for Tensor<'scope> {
+    fn drop(&mut self) {
+        if let Some(sender) = self.sender.take() {
+            sender.send(Tensor {
+                write_bind_group: self.write_bind_group.clone(),
+                read_bind_group: self.read_bind_group.clone(),
+                shape_buffer: self.shape_buffer.clone(),
+                buffer: self.buffer.clone(),
+                shape: self.shape.clone(),
+                sender: None
+            }).ok();
+        }
     }
 }

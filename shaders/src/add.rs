@@ -23,7 +23,7 @@ impl ShaderShape {
 }
 
 #[unsafe(no_mangle)]
-#[spirv(compute(threads(1, 1, 1)))]
+#[spirv(compute(threads(256)))]
 pub fn main(
     #[spirv(global_invocation_id)] index: UVec3,
 

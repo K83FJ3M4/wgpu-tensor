@@ -4,6 +4,12 @@ pub trait IntoShape {
     fn shape(self) -> Shape;
 }
 
+impl IntoShape for Shape {
+    fn shape(self) -> Shape {
+        self
+    }
+}
+
 impl IntoShape for u32 {
     fn shape(self) -> Shape {
         let mut shape = Shape::default();

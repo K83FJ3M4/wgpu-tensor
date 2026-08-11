@@ -1,31 +1,39 @@
-use wgpu::WriteOnly;
-
 use crate::staging::allocator::StagingChunk;
 use crate::{Tensor, TensorEncoder};
 pub(crate) use allocator::{StagingAllocator, StagingAllocatorPool};
+use bytemuck::bytes_of;
+pub use reader::{TensorReader, PrintTensorReader};
+use shaders::Shape;
+pub use writer::TensorWriter;
 
 mod allocator;
+mod writer;
+mod reader;
 
-pub trait TensorReader: Send + 'static {
-    fn read(&mut self, data: &[u8]);
-    fn error(&mut self) {}
-}
+impl<'scope> TensorEncoder<'scope> {
+    pub(crate) fn reshape(&mut self, tensor: &Tensor, shape: Shape) {
+        let chunk = loop {
+            let mut chunk = self.write_allocator.chunk(
+                size_of::<Shape>() as u64,
+                self.encoders.command()
+            );
 
-impl<T: Iterator<Item = u8>> TensorWriter for T {
-    fn write(&mut self, chunk: WriteOnly<[u8]>) {
-        let len = chunk.len();
-        chunk.write_iter(self.take(len));
+            if chunk.data().len() == size_of::<Shape>() {
+                chunk.data().copy_from_slice(bytes_of(&shape));
+                break chunk
+            }
+        };
+
+        let slice = chunk.slice();
+        self.encoders.command().copy_buffer_to_buffer(
+            slice.buffer(), slice.offset(),
+            &tensor.shape_buffer(), 0, slice.size()
+        );
     }
-}
 
-pub trait TensorWriter {
-    fn write(&mut self, chunk: WriteOnly<[u8]>);
-}
-
-impl<'a> TensorEncoder<'a> {
     pub fn write(&mut self, tensor: &Tensor, mut writer: impl TensorWriter) {
-        let mut size = tensor.data_size();
-        let mut length = tensor.buffer.size();
+        let mut size = Tensor::data_size(tensor.shape()) as usize;
+        let mut length = Tensor::buffer_size(tensor.shape()).get();
         let mut offset = 0;
 
         while length != 0 {
@@ -41,18 +49,20 @@ impl<'a> TensorEncoder<'a> {
             let slice = chunk.slice();
             self.encoders.command().copy_buffer_to_buffer(
                 slice.buffer(), slice.offset(),
-                &tensor.buffer, offset, slice.size()
+                &tensor.data_buffer(), offset, slice.size()
             );
 
             offset += slice.size();
             length -= slice.size();
             size -= data_len;
         }
+
+        writer.finish();
     }
 
     pub fn read(&mut self, tensor: &Tensor, mut reader: impl TensorReader) {
         let mut offset = 0;
-        let mut length = tensor.buffer.size();
+        let mut length = Tensor::buffer_size(tensor.shape()).get();
         let mut chunks = Vec::new();
 
         while length != 0 {
@@ -63,7 +73,7 @@ impl<'a> TensorEncoder<'a> {
 
             let slice = chunk.slice();
             self.encoders.command().copy_buffer_to_buffer(
-                &tensor.buffer, offset,
+                &tensor.data_buffer(), offset,
                 slice.buffer(), slice.offset(),
                 slice.size()
             );
@@ -73,18 +83,21 @@ impl<'a> TensorEncoder<'a> {
             chunks.push(chunk.unmap());
         }
 
-        let mut size = tensor.data_size();
+        let mut size = Tensor::data_size(tensor.shape()) as usize;
         self.encoders.command().on_submitted_work_done(move || {
             if !chunks.iter().all(StagingChunk::mapped) { reader.error() }
             for slice in chunks.iter().map(StagingChunk::slice) { 
                 if let Ok(range) = slice.get_mapped_range() {
-                    reader.read(&range[..range.len().min(size)]);
-                    size -= size.saturating_sub(range.len());
+                    let length = range.len().min(size);
+                    reader.read(&range[..length]);
+                    size -= length;
                 } else {
                     reader.error();
                     break;
                 }
             }
+
+            reader.finish();
         });
     }
 }
