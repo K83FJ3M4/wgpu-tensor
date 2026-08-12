@@ -13,3 +13,4 @@ glam = {
     default-features = false,
     features = ["libm", "u32", "i32", "f64"],
 }
+bytemuck = { version = "1.25.2", features = ["derive"] }
