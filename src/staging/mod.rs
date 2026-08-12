@@ -1,17 +1,17 @@
 use crate::staging::allocator::StagingChunk;
 use crate::{Tensor, TensorEncoder};
 pub(crate) use allocator::{StagingAllocator, StagingAllocatorPool};
-use bytemuck::bytes_of;
 pub use reader::{TensorReader, PrintTensorReader};
-use shaders::Shape;
+pub(crate) use encoder::{Encoder, EncoderPool};
 pub use writer::TensorWriter;
 
 mod allocator;
 mod writer;
 mod reader;
+mod encoder;
 
 impl<'scope> TensorEncoder<'scope> {
-    pub(crate) fn reshape(&mut self, tensor: &Tensor, shape: Shape) {
+    /*pub(crate) fn reshape(&mut self, tensor: &Tensor, shape: Shape) {
         let chunk = loop {
             let mut chunk = self.write_allocator.chunk(
                 size_of::<Shape>() as u64,
@@ -29,7 +29,7 @@ impl<'scope> TensorEncoder<'scope> {
             slice.buffer(), slice.offset(),
             &tensor.shape_buffer(), 0, slice.size()
         );
-    }
+    }*/
 
     pub fn write(&mut self, tensor: &Tensor, mut writer: impl TensorWriter) {
         let mut size = Tensor::data_size(tensor.shape()) as usize;
@@ -39,7 +39,7 @@ impl<'scope> TensorEncoder<'scope> {
         while length != 0 {
             let mut chunk = self.write_allocator.chunk(
                 length,
-                self.encoders.command()
+                self.encoder.command()
             );
 
             let data = chunk.data();
@@ -47,7 +47,7 @@ impl<'scope> TensorEncoder<'scope> {
             writer.write(chunk.data().into_slice(..data_len));
 
             let slice = chunk.slice();
-            self.encoders.command().copy_buffer_to_buffer(
+            self.encoder.command().copy_buffer_to_buffer(
                 slice.buffer(), slice.offset(),
                 &tensor.data_buffer(), offset, slice.size()
             );
@@ -68,11 +68,11 @@ impl<'scope> TensorEncoder<'scope> {
         while length != 0 {
             let chunk = self.read_allocator.chunk(
                 length,
-                self.encoders.command()
+                self.encoder.command()
             );
 
             let slice = chunk.slice();
-            self.encoders.command().copy_buffer_to_buffer(
+            self.encoder.command().copy_buffer_to_buffer(
                 &tensor.data_buffer(), offset,
                 slice.buffer(), slice.offset(),
                 slice.size()
@@ -84,7 +84,7 @@ impl<'scope> TensorEncoder<'scope> {
         }
 
         let mut size = Tensor::data_size(tensor.shape()) as usize;
-        self.encoders.command().on_submitted_work_done(move || {
+        self.encoder.command().on_submitted_work_done(move || {
             if !chunks.iter().all(StagingChunk::mapped) { reader.error() }
             for slice in chunks.iter().map(StagingChunk::slice) { 
                 if let Ok(range) = slice.get_mapped_range() {

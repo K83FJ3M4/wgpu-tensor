@@ -1,0 +1,246 @@
+use std::collections::HashMap;
+use std::num::NonZeroU64;
+use std::sync::mpsc::{Receiver, Sender, channel};
+
+use bytemuck::{Pod, bytes_of};
+use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindingResource, Buffer, BufferAddress, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, BufferViewMut, CommandEncoder, ComputePass, ComputePassDescriptor, ComputePipeline, Device, MapMode};
+
+use crate::pipelines::{BindGroupLayoutPool, BindingShape, BindingSize};
+
+const CPU_BLOCK_SIZE: u64 = 4 << 20;
+const GPU_BLOCK_SIZE: u64 = 256 << 10;
+
+pub(crate) struct EncoderPool {
+    parameters: Buffer,
+    bind_group_layouts: BindGroupLayoutPool,
+    bind_groups: HashMap<usize, BindGroup>,
+    receiver: Receiver<Buffer>,
+    sender: Sender<Buffer>,
+    device: Device
+}
+
+pub(crate) struct Encoder<'a> {
+    command_encoder: &'a mut CommandEncoder,
+    compute_pass: Option<ComputePass<'static>>,
+    pool: &'a mut EncoderPool,
+    view: Option<EncoderStagingBuffer>,
+    cpu_offset: u64,
+    gpu_offset: u64
+}
+
+struct EncoderStagingBuffer {
+    view: BufferViewMut,
+    buffer: Buffer
+}
+
+impl<'a> Encoder<'a> {
+    pub(crate) fn new(
+        pool: &'a mut EncoderPool,
+        command_encoder: &'a mut CommandEncoder
+    ) -> Encoder<'a> {
+        Encoder {
+            pool,
+            command_encoder,
+            compute_pass: None,
+            view: None,
+            cpu_offset: 0,
+            gpu_offset: 0
+        }
+    } 
+
+    pub(crate) fn compute<T: Pod>(
+        &mut self,
+        cache: &mut Option<ComputePipeline>,
+        init: impl FnOnce(&mut BindGroupLayoutPool) -> ComputePipeline,
+        params: &T
+    ) -> &mut ComputePass<'static> {
+        let bytes = bytes_of(params);
+        let length = bytes.len() as BufferAddress;
+        let align = self.pool.device.limits()
+            .min_uniform_buffer_offset_alignment as u64;
+
+        assert!((size_of::<T>() as u64) > 0);
+        assert!((size_of::<T>() as u64) < 256);
+        assert!((size_of::<T>() as u64) < GPU_BLOCK_SIZE);
+
+        self.cpu_offset = self.cpu_offset.next_multiple_of(align);
+        self.gpu_offset = self.gpu_offset.next_multiple_of(align);
+
+        let replace_view = self.cpu_offset + length > CPU_BLOCK_SIZE;
+        let write_params = self.gpu_offset + length > GPU_BLOCK_SIZE;
+
+        if let Some(view) = self.view.as_ref() && replace_view {
+            let buffer = view.buffer.clone();
+            drop(self.view.take());
+            buffer.unmap();
+        }
+
+        if let Some(view) = self.view.as_ref() && write_params {
+            self.compute_pass = None;
+            self.gpu_offset = 0;
+            self.cpu_offset = self.cpu_offset
+                .next_multiple_of(GPU_BLOCK_SIZE);
+
+            self.command_encoder.copy_buffer_to_buffer(
+                &view.buffer, self.cpu_offset,
+                &self.pool.parameters, 0,
+                self.pool.parameters.size()
+            );
+        }
+
+        let view = self.view.get_or_insert_with(|| {
+            let view = self.pool.buffer();
+            self.compute_pass = None;
+            self.cpu_offset = 0;
+            self.gpu_offset = 0;
+
+            let sender = self.pool.sender.clone();
+            let buffer = view.buffer.clone();
+
+            self.command_encoder.copy_buffer_to_buffer(
+                &view.buffer, 0,
+                &self.pool.parameters, 0,
+                self.pool.parameters.size()
+            );
+
+            self.command_encoder.map_buffer_on_submit(
+                &view.buffer,
+                MapMode::Write, ..,
+                move |result| if result.is_ok() {
+                    sender.send(buffer).ok();
+                }
+            );
+
+            view
+        });
+
+        let offset = self.cpu_offset as usize;
+        view.view.slice(offset..offset + bytes.len())
+            .copy_from_slice(bytes); 
+
+        let compute_pass = self.compute_pass.get_or_insert_with(|| {
+            self.command_encoder.begin_compute_pass(
+                &ComputePassDescriptor {
+                    label: None,
+                    timestamp_writes: None
+                }
+            ).forget_lifetime()
+        });
+
+        compute_pass.set_bind_group(
+            0, self.pool.bind_group::<T>(),
+            &[self.gpu_offset as u32]
+        );
+
+        if let Some(pipeline) = cache {
+            compute_pass.set_pipeline(pipeline);
+        } else {
+            let pipeline = init(&mut self.pool.bind_group_layouts);
+            compute_pass.set_pipeline(&pipeline);
+            *cache = Some(pipeline);
+        }
+
+        self.cpu_offset += length;
+        self.gpu_offset += length;
+        compute_pass
+    }
+
+    pub(super) fn command(&mut self) -> &mut CommandEncoder {
+        self.compute_pass = None;
+        &mut self.command_encoder
+    } 
+
+    pub(crate) fn bind_group_layouts(
+        &mut self
+    ) -> &mut BindGroupLayoutPool {
+        &mut self.pool.bind_group_layouts
+    }
+}
+
+impl EncoderPool {
+    pub(crate) fn new(device: &Device) -> EncoderPool {
+        let pool = BindGroupLayoutPool::new(device)
+            .expect("Incorrect device limits");
+
+        let (sender, receiver) = channel();
+        let parameters = device.create_buffer(&BufferDescriptor {
+            label: None,
+            mapped_at_creation: false,
+            size: GPU_BLOCK_SIZE,
+            usage: BufferUsages::UNIFORM
+                | BufferUsages::COPY_DST
+        });
+
+        EncoderPool {
+            bind_group_layouts: pool,
+            bind_groups: HashMap::new(),
+            device: device.clone(),
+            parameters,
+            receiver,
+            sender
+        }
+    }
+
+    fn bind_group<'a, T: Pod>(&'a mut self) -> &'a BindGroup {
+        self.bind_groups.entry(size_of::<T>()).or_insert_with(|| {
+            let layout = self.bind_group_layouts.get(&[BindingShape::Buffer {
+                has_dynamic_offset: true,
+                size: BindingSize::of::<T>(),
+                ty: BufferBindingType::Uniform
+            }]);
+
+            self.device.create_bind_group(&BindGroupDescriptor {
+                label: None,
+                layout,
+                entries: &[BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &self.parameters,
+                        size: NonZeroU64::new(size_of::<T>() as u64),
+                        offset: 0
+                    })
+                }]
+            }) 
+        })
+    }
+
+    fn buffer(&self) -> EncoderStagingBuffer {
+        while let Ok(buffer) = self.receiver.try_recv() {
+            if let Ok(view) = buffer.get_mapped_range_mut(..) {
+                return EncoderStagingBuffer {
+                    buffer,
+                    view
+                } 
+            }
+        }
+
+        let buffer = self.device.create_buffer(&BufferDescriptor {
+            usage: BufferUsages::MAP_WRITE | BufferUsages::COPY_SRC,
+            mapped_at_creation: true,
+            size: CPU_BLOCK_SIZE,
+            label: None
+        });
+
+        let view = buffer.get_mapped_range_mut(..).unwrap();
+        EncoderStagingBuffer {
+            buffer,
+            view
+        } 
+    }
+
+    pub(crate) fn bind_group_layouts(
+        &mut self
+    ) -> &mut BindGroupLayoutPool {
+        &mut self.bind_group_layouts
+    }
+}
+
+impl<'a> Drop for Encoder<'a> {
+    fn drop(&mut self) {
+        if let Some(view) = self.view.as_ref() {
+            let buffer = view.buffer.clone();
+            drop(self.view.take());
+            buffer.unmap();
+        }
+    }
+}

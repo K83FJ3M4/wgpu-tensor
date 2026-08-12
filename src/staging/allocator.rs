@@ -159,8 +159,6 @@ impl<T: StagingBufferView> StagingAllocatorPool<T> {
             label: None
         });
 
-        println!("Created new staging buffer of size {}", T::BLOCK_SIZE);
-
         let view = T::new(&buffer).unwrap();
         let staging_buffer = StagingBuffer {
             status: AtomicUsize::new(STATUS_MAPPED),
@@ -260,7 +258,6 @@ impl<'a, T: StagingBufferView> Drop for StagingAllocator<'a, T> {
 impl Drop for StagingBuffer {
     fn drop(&mut self) {
         if self.status.load(Ordering::Acquire) == STATUS_MAPPED {
-            println!("Reused");
             self.sender.send(self.buffer.clone()).ok();
         }
     }

@@ -1,8 +1,7 @@
 use std::sync::mpsc::Sender;
 
-use bytemuck::{Contiguous, cast_slice};
+use bytemuck::Contiguous;
 use shaders::Shape;
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, COPY_BUFFER_ALIGNMENT, ComputePass, Device};
 pub use shape::IntoShape;
 pub(super) use pool::TensorPool;
@@ -17,7 +16,6 @@ pub struct Tensor<'scope> {
     sender: Option<&'scope Sender<Tensor<'static>>>,
     read_bind_group: BindGroup,
     write_bind_group: BindGroup,
-    shape_buffer: Buffer,
     buffer: Buffer,
     shape: Shape
 }
@@ -29,7 +27,7 @@ impl Tensor<'static> {
     ) -> Tensor<'static> {
         let shape = shape.shape();
         Self::create(
-            &mut context.bind_group_layouts,
+            &mut context.encoder_pool.bind_group_layouts(),
             &context.device, shape,
             Self::buffer_size(shape)
         )
@@ -38,11 +36,7 @@ impl Tensor<'static> {
 
 impl<'scope> Tensor<'scope> {
     const MIN_TEMPORARY_CAPACITY: BufferAddress = 256;
-    const BUCKETS_PER_OCTAVE: BufferAddress = 4; 
-
-    pub(crate) fn shape_buffer(&self) -> &Buffer {
-        &self.shape_buffer
-    }
+    const BUCKETS_PER_OCTAVE: BufferAddress = 4;
 
     pub(crate) fn data_buffer(&self) -> &Buffer {
         &self.buffer
@@ -69,15 +63,6 @@ impl<'scope> Tensor<'scope> {
             }
         );
 
-        let shape_buffer = device.create_buffer_init(
-            &BufferInitDescriptor {
-                contents: cast_slice(shape.as_slice()),
-                usage: BufferUsages::UNIFORM
-                    | BufferUsages::COPY_DST,
-                label: None,
-            }
-        );
-
         let read_bind_group = Self::create_bind_group(
             device, bind_group_layouts.get(&[
                 BindingShape::Buffer {
@@ -86,14 +71,8 @@ impl<'scope> Tensor<'scope> {
                     ty: BufferBindingType::Storage {
                         read_only: true
                     }
-                },
-                BindingShape::Buffer {
-                    has_dynamic_offset: false,
-                    size: BindingSize::of::<Shape>(),
-                    ty: BufferBindingType::Uniform
-                }
+                } 
             ]),
-            &shape_buffer,
             &buffer
         );
 
@@ -105,14 +84,8 @@ impl<'scope> Tensor<'scope> {
                     ty: BufferBindingType::Storage {
                         read_only: false
                     }
-                },
-                BindingShape::Buffer {
-                    has_dynamic_offset: false,
-                    size: BindingSize::of::<Shape>(),
-                    ty: BufferBindingType::Uniform
-                }
+                } 
             ]),
-            &shape_buffer,
             &buffer
         );
 
@@ -120,7 +93,6 @@ impl<'scope> Tensor<'scope> {
             sender: None,
             read_bind_group,
             write_bind_group,
-            shape_buffer,
             buffer,
             shape,
         }
@@ -161,7 +133,6 @@ impl<'scope> Tensor<'scope> {
     fn create_bind_group(
         device: &Device,
         layout: &BindGroupLayout,
-        shape_buffer: &Buffer,
         buffer: &Buffer,
     ) -> BindGroup {
         device.create_bind_group(&BindGroupDescriptor {
@@ -170,9 +141,6 @@ impl<'scope> Tensor<'scope> {
             entries: &[BindGroupEntry {
                 resource: buffer.as_entire_binding(),
                 binding: 0,
-            }, BindGroupEntry {
-                resource: shape_buffer.as_entire_binding(),
-                binding: 1,
             }]
         })
     }
@@ -212,7 +180,6 @@ impl<'scope> Drop for Tensor<'scope> {
             sender.send(Tensor {
                 write_bind_group: self.write_bind_group.clone(),
                 read_bind_group: self.read_bind_group.clone(),
-                shape_buffer: self.shape_buffer.clone(),
                 buffer: self.buffer.clone(),
                 shape: self.shape.clone(),
                 sender: None

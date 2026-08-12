@@ -43,7 +43,7 @@ fn main() {
     context.encode(&mut encoder, |encoder| {
 
         encoder.write(&tensor_a, repeat(2.0).take(4));
-        encoder.write(&tensor_b, repeat(3.0).take(4));
+        encoder.write(&tensor_b, repeat(10.0).take(4));
 
         let output_a = encoder.add(&tensor_a, &tensor_b).unwrap();
         let output_b = encoder.add(&tensor_a, &tensor_b).unwrap();

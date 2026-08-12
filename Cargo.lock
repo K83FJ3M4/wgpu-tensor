@@ -623,6 +623,7 @@ dependencies = [
 name = "shaders"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "glam",
  "spirv-std",
 ]
