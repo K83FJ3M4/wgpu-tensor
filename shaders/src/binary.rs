@@ -36,6 +36,13 @@ pub fn main(
     let rhs = input_b[indices.y as usize];
     output[output_index] = match params.operation {
         BinaryOperation::ADD => lhs + rhs,
+        BinaryOperation::SUBTRACT => lhs - rhs,
+        BinaryOperation::MULTIPLY => lhs * rhs,
+        BinaryOperation::DIVIDE => lhs / rhs,
+        BinaryOperation::POWER => power(lhs, rhs),
+        BinaryOperation::MINIMUM => minimum(lhs, rhs),
+        BinaryOperation::MAXIMUM => maximum(lhs, rhs),
+        BinaryOperation::REMAINDER => remainder(lhs, rhs),
         _ => 0.0
     };
 }
@@ -91,6 +98,73 @@ impl FastDivU32 {
 
         x1 * y1 + w2 + (w1 >> 16) 
     }
+}
+
+#[inline(always)]
+fn power(lhs: f32, rhs: f32) -> f32 {
+    let negative = lhs.to_bits() & 0x8000_0000 != 0;
+    let integral_exponent = rhs.fract() == 0.0;
+
+    if lhs < 0.0 {
+        if !integral_exponent {
+            return nan_from(lhs);
+        }
+
+        let result = (-lhs).powf(rhs);
+        if rhs % 2.0 == 0.0 { result } else { -result }
+    } else if lhs == 0.0 && negative && integral_exponent && rhs % 2.0 != 0.0 {
+        -(0.0_f32.powf(rhs))
+    } else {
+        lhs.powf(rhs)
+    }
+}
+
+#[inline(always)]
+fn minimum(lhs: f32, rhs: f32) -> f32 {
+    if lhs.is_nan() {
+        lhs
+    } else if rhs.is_nan() {
+        rhs
+    } else {
+        lhs.min(rhs)
+    }
+}
+
+#[inline(always)]
+fn maximum(lhs: f32, rhs: f32) -> f32 {
+    if lhs.is_nan() {
+        lhs
+    } else if rhs.is_nan() {
+        rhs
+    } else {
+        lhs.max(rhs)
+    }
+}
+
+#[inline(always)]
+fn remainder(lhs: f32, rhs: f32) -> f32 {
+    if lhs.is_nan() {
+        return lhs;
+    } else if rhs.is_nan() {
+        return rhs;
+    } else if rhs == 0.0 || lhs.to_bits() & 0x7fff_ffff == 0x7f80_0000 {
+        return nan_from(lhs);
+    }
+
+    let remainder = lhs % rhs;
+
+    if remainder == 0.0 {
+        f32::from_bits(rhs.to_bits() & 0x8000_0000)
+    } else if (remainder < 0.0) != (rhs < 0.0) {
+        remainder + rhs
+    } else {
+        remainder
+    }
+}
+
+#[inline(always)]
+fn nan_from(value: f32) -> f32 {
+    f32::from_bits((value.to_bits() & 0x003f_ffff) | 0x7fc0_0000)
 }
 
 #[inline]

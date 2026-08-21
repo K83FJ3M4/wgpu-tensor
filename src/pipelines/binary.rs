@@ -15,6 +15,90 @@ impl<'scope> TensorEncoder<'scope> {
         )
     }
 
+    pub fn subtract(
+        &mut self,
+        operand_one: &Tensor,
+        operand_two: &Tensor
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.binary(
+            BinaryOperation::SUBTRACT,
+            operand_one,
+            operand_two,
+        )
+    }
+
+    pub fn multiply(
+        &mut self,
+        operand_one: &Tensor,
+        operand_two: &Tensor
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.binary(
+            BinaryOperation::MULTIPLY,
+            operand_one,
+            operand_two,
+        )
+    }
+
+    pub fn divide(
+        &mut self,
+        operand_one: &Tensor,
+        operand_two: &Tensor
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.binary(
+            BinaryOperation::DIVIDE,
+            operand_one,
+            operand_two,
+        )
+    }
+
+    pub fn power(
+        &mut self,
+        operand_one: &Tensor,
+        operand_two: &Tensor
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.binary(
+            BinaryOperation::POWER,
+            operand_one,
+            operand_two,
+        )
+    }
+
+    pub fn minimum(
+        &mut self,
+        operand_one: &Tensor,
+        operand_two: &Tensor
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.binary(
+            BinaryOperation::MINIMUM,
+            operand_one,
+            operand_two,
+        )
+    }
+
+    pub fn maximum(
+        &mut self,
+        operand_one: &Tensor,
+        operand_two: &Tensor
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.binary(
+            BinaryOperation::MAXIMUM,
+            operand_one,
+            operand_two,
+        )
+    }
+
+    pub fn remainder(
+        &mut self,
+        operand_one: &Tensor,
+        operand_two: &Tensor
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.binary(
+            BinaryOperation::REMAINDER,
+            operand_one,
+            operand_two,
+        )
+    }
+
     fn binary(
         &mut self,
         operation: BinaryOperation,
