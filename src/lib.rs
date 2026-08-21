@@ -1,9 +1,9 @@
 
 pub use tensor::{Tensor, IntoShape};
 pub use staging::{TensorReader, TensorWriter, PrintTensorReader};
-use wgpu::{BufferView, BufferViewMut, CommandEncoder, ComputePass, ComputePassDescriptor, Device};
+use wgpu::{BufferView, BufferViewMut, CommandEncoder, Device};
 
-use crate::pipelines::{BindGroupLayoutPool, Pipelines};
+use crate::pipelines::{Pipelines};
 use crate::staging::{Encoder, EncoderPool, StagingAllocator, StagingAllocatorPool};
 use crate::tensor::TensorPool;
 
@@ -36,6 +36,13 @@ pub struct TensorEncoder<'scope> {
     device: &'scope Device
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum TensorError {
+    ShapeMismatch,
+    OversizedTensor,
+    OversizedDispatch
+}
+
 impl TensorContext {
     pub fn new(device: Device) -> TensorContext {
         let tensors = TensorPool::new();
@@ -53,11 +60,11 @@ impl TensorContext {
         }
     }
 
-    pub fn encode(
+    pub fn encode<T>(
         &mut self,
         encoder: &mut CommandEncoder,
-        callback: impl for<'scope> FnOnce(&mut TensorEncoder<'scope>)
-    ) {
+        callback: impl for<'scope> FnOnce(&mut TensorEncoder<'scope>) -> T
+    ) -> T {
         let read_allocator = StagingAllocator::new(&self.read_pool);
         let write_allocator = StagingAllocator::new(&self.write_pool);
         let encoder = Encoder::new(&mut self.encoder_pool, encoder);
@@ -69,6 +76,6 @@ impl TensorContext {
             write_allocator,
             device: &self.device,
             encoder 
-        });
+        })
     }
 }

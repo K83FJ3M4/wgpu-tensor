@@ -6,7 +6,7 @@ use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buff
 pub use shape::IntoShape;
 pub(super) use pool::TensorPool;
 
-use crate::TensorContext;
+use crate::{TensorContext, TensorError};
 use crate::pipelines::{BindGroupLayoutPool, BindingShape, BindingSize};
 
 mod shape;
@@ -17,20 +17,20 @@ pub struct Tensor<'scope> {
     read_bind_group: BindGroup,
     write_bind_group: BindGroup,
     buffer: Buffer,
-    shape: Shape
+    shape: Shape,
 }
 
 impl Tensor<'static> {
     pub fn new(
         context: &mut TensorContext,
         shape: impl IntoShape
-    ) -> Tensor<'static> {
+    ) -> Result<Tensor<'static>, TensorError> {
         let shape = shape.shape();
-        Self::create(
+        Ok(Self::create(
             &mut context.encoder_pool.bind_group_layouts(),
             &context.device, shape,
-            Self::buffer_size(shape)
-        )
+            Self::buffer_size(shape)?
+        ))
     }
 }
 
@@ -96,18 +96,7 @@ impl<'scope> Tensor<'scope> {
             buffer,
             shape,
         }
-    } 
-
-    pub(crate) fn broadcast(&self, other: &Tensor) -> Option<Shape> {
-        let mut shape = self.shape.clone();
-        for (dst, src) in shape.iter_mut().zip(other.shape) {
-            if (*dst == 1 || src == 1) || (*dst == src) {
-                *dst = (*dst).max(src);
-            } else { return None }
-        }
-
-        Some(shape)
-    }
+    }  
 
     pub(crate) fn bind(
         &self,
@@ -143,34 +132,37 @@ impl<'scope> Tensor<'scope> {
                 binding: 0,
             }]
         })
-    }
+    } 
 
-    pub(crate) fn data_size(shape: Shape) -> BufferAddress {
+    pub(crate) fn data_size(shape: Shape) -> Result<BufferAddress, TensorError> {
         shape.into_iter()
             .map(|x| x as u64)
-            .fold(1, u64::saturating_mul)
-            .saturating_mul(size_of::<f32>() as u64)
+            .try_fold(1, u64::checked_mul)
+            .ok_or(TensorError::OversizedTensor)?
+            .checked_mul(size_of::<f32>() as u64)
+            .ok_or(TensorError::OversizedTensor)
     }
 
-    pub(crate) fn buffer_size(shape: Shape) -> BufferSize {
-        BufferSize::new(
-            Self::data_size(shape)
-                .checked_next_multiple_of(COPY_BUFFER_ALIGNMENT)
+    pub(crate) fn buffer_size(shape: Shape) -> Result<BufferSize, TensorError> {
+        let alignment = BufferSize::new(COPY_BUFFER_ALIGNMENT).unwrap();
+        Ok(BufferSize::new(
+            Self::data_size(shape)?
+                .checked_next_multiple_of(alignment.get())
                 .unwrap_or(BufferSize::MAX_VALUE)
-        ).unwrap_or(BufferSize::new(COPY_BUFFER_ALIGNMENT).unwrap())
+        ).unwrap_or(alignment))
     }
 
-    fn bucket_size(shape: Shape) -> BufferSize {
-        let required = Self::buffer_size(shape).get()
+    fn bucket_size(shape: Shape) -> Result<BufferSize, TensorError> {
+        let required = Self::buffer_size(shape)?.get()
             .max(Self::MIN_TEMPORARY_CAPACITY);
 
         let octave = 1u64 << ((u64::BITS - 1) - required.leading_zeros());
         let bucket_width = (octave / Self::BUCKETS_PER_OCTAVE)
             .max(COPY_BUFFER_ALIGNMENT);
 
-        required.checked_next_multiple_of(bucket_width)
+        Ok(required.checked_next_multiple_of(bucket_width)
             .map(BufferSize::new).flatten()
-            .unwrap_or(BufferSize::MAX)
+            .unwrap_or(BufferSize::MAX))
     }
 }
 

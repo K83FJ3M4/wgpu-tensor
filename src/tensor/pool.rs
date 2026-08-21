@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use wgpu::BufferSize;
-use crate::{IntoShape, Tensor, TensorEncoder};
+use crate::{IntoShape, Tensor, TensorEncoder, TensorError};
 
 pub(crate) struct TensorPool {
     sender: Sender<Tensor<'static>>,
@@ -25,7 +25,7 @@ impl<'scope> TensorEncoder<'scope> {
     pub(crate) fn temp(
         &mut self,
         shape: impl IntoShape,
-    ) -> Tensor<'scope> {
+    ) -> Result<Tensor<'scope>, TensorError> {
         if let Ok(mut tensors) = self.tensors.tensors.try_borrow_mut() {
             while let Ok(tensor) = self.tensors.receiver.try_recv() {
                 let size = BufferSize::new(tensor.buffer.size());
@@ -37,15 +37,14 @@ impl<'scope> TensorEncoder<'scope> {
         }
 
         let shape = shape.shape();
-        let bucket = Tensor::bucket_size(shape);
+        let bucket = Tensor::bucket_size(shape)?;
  
         if let Ok(mut tensors) = self.tensors.tensors.try_borrow_mut() {
             if let Some(mut tensor) = tensors.get_mut(&bucket)
                 .map(Vec::pop).flatten() {
                 tensor.sender = Some(&self.tensors.sender);
                 tensor.shape = shape;
-                return tensor;
-                
+                return Ok(tensor); 
             }
         } 
 
@@ -54,6 +53,6 @@ impl<'scope> TensorEncoder<'scope> {
             self.device, shape, bucket
         );
         tensor.sender = Some(&self.tensors.sender);
-        tensor
+        Ok(tensor)
     }
 }

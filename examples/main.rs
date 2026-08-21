@@ -2,7 +2,7 @@ use std::iter::repeat;
 
 use wgpu::{Backends, DeviceDescriptor, ExperimentalFeatures, Instance, InstanceDescriptor, InstanceFlags, MemoryHints, PollType, PowerPreference, RequestAdapterOptions, Trace};
 use pollster::FutureExt;
-use wgpu_tensor::{ALL_FEATURES, BASELINE_DOWNLEVEL_FLAGS, BASELINE_FEATURES, BASELINE_LIMITS, PrintTensorReader, Tensor, TensorContext};
+use wgpu_tensor::{ALL_FEATURES, BASELINE_DOWNLEVEL_FLAGS, BASELINE_FEATURES, BASELINE_LIMITS, PrintTensorReader, Tensor, TensorContext, TensorError};
 
 fn main() {
     let instance = Instance::new(InstanceDescriptor {
@@ -36,21 +36,21 @@ fn main() {
     }).block_on().expect("Failed to create device");
 
     let mut context = TensorContext::new(device.clone());
-    let tensor_a = Tensor::new(&mut context, 4);
-    let tensor_b = Tensor::new(&mut context, 4);
+    let tensor_a = Tensor::new(&mut context, 4).unwrap();
+    let tensor_b = Tensor::new(&mut context, 4).unwrap();
  
     let mut encoder = device.create_command_encoder(&Default::default());
     context.encode(&mut encoder, |encoder| {
-
         encoder.write(&tensor_a, repeat(2.0).take(4));
         encoder.write(&tensor_b, repeat(10.0).take(4));
 
-        let output_a = encoder.add(&tensor_a, &tensor_b).unwrap();
-        let output_b = encoder.add(&tensor_a, &tensor_b).unwrap();
+        let output_a = encoder.add(&tensor_a, &tensor_b)?;
+        let output_b = encoder.add(&tensor_a, &tensor_b)?;
 
         encoder.read(&output_a, PrintTensorReader::new());
         encoder.read(&output_b, PrintTensorReader::new());
-    });
+        Result::<_, TensorError>::Ok(())
+    }).unwrap();
 
     let index = queue.submit(Some(encoder.finish()));
     device.poll(PollType::Wait {

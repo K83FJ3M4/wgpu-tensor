@@ -1,0 +1,172 @@
+use bytemuck::Zeroable;
+use shaders::{BinaryParameters, FastDivU32, Shape};
+use wgpu::ComputePipeline;
+use crate::pipelines::BindGroupLayoutPool;
+use crate::{Pipelines, Tensor, TensorEncoder, TensorError};
+
+impl<'scope> TensorEncoder<'scope> {
+    pub fn add(
+        &mut self,
+        operand_one: &Tensor,
+        operand_two: &Tensor
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.binary(
+            |pipelines| &mut pipelines.add,
+            super::shaders::binary::add,
+            operand_one,
+            operand_two,
+        )
+    }
+
+    fn binary(
+        &mut self,
+        cache: fn(&mut Pipelines) -> &mut Option<ComputePipeline>,
+        pipeline: fn(&mut BindGroupLayoutPool) -> ComputePipeline,
+        operand_one: &Tensor,
+        operand_two: &Tensor,
+    ) -> Result<Tensor<'scope>, TensorError> {
+
+        let mut shape = operand_one.shape();
+
+        for (dst, src) in shape.iter_mut().zip(operand_two.shape()) {
+            *dst = Self::boradcast_dimension(*dst, src)?;
+        }
+        
+        let params = Self::create_binary_params(
+            operand_one.shape(),
+            operand_two.shape()
+        )?;
+
+        let output = self.temp(shape)?;
+        let compute_pass = self.encoder.compute(
+            cache(&mut self.pipelines),
+            pipeline,
+            &params
+        );
+
+        operand_one.bind(compute_pass, 1, true);
+        operand_two.bind(compute_pass, 2, true);
+        output.bind(compute_pass, 3, false);
+        let num_workgroups = params.length.div_ceil(256);
+
+        if num_workgroups != 0 {
+            let floor = num_workgroups.isqrt();
+            let x = floor + (floor * floor != num_workgroups) as u32;
+            let y = num_workgroups.div_ceil(x);
+            compute_pass.dispatch_workgroups(x, y, 1);
+        }
+
+        Ok(output)
+    }
+
+    fn create_binary_params(
+        shape_a: Shape,
+        shape_b: Shape
+    ) -> Result<BinaryParameters, TensorError> {
+        let mut accumulator = None;
+        let mut params = BinaryParameters::zeroed();
+        params.length = 1;
+
+        for (a, b) in shape_a.into_iter().zip(shape_b) {
+            if (a == 1 || b == 1) && a != b {
+                if let Some(a) = accumulator.take() {
+                    Self::push_dimension(&mut params, a, a)?;
+                }
+
+                Self::push_dimension(&mut params, a, b)?;
+            } else if a == b {
+                if let Some(accumulator) = accumulator.as_mut() {
+                    *accumulator = accumulator.checked_mul(a)
+                        .ok_or(TensorError::OversizedDispatch)?;
+                } else {
+                    accumulator = Some(a);
+                }
+            } else {
+                return Err(TensorError::ShapeMismatch)
+            } 
+        }
+
+        if let Some(a) = accumulator {
+            Self::push_dimension(&mut params, a, a)?;
+        }
+
+        Ok(params)
+    } 
+
+    fn create_div(divisor: u32) -> FastDivU32 {
+        assert!(divisor != 0);
+
+        if divisor == 1 {
+            return FastDivU32 {
+                divisor,
+                magic: 0,
+                shift: 0,
+                pad: 0 
+            }
+        }
+
+        let floor_log2 = 31 - divisor.leading_zeros();
+        if divisor.is_power_of_two() {
+            return FastDivU32 {
+                divisor: divisor,
+                magic: 0,
+                shift: floor_log2 - 1,
+                pad: 0
+            }
+        }
+
+        let numerator = 1u64 << (32 + floor_log2);
+        let mut proposed_m = (numerator / divisor as u64) as u32;
+        let remainder = (numerator % divisor as u64) as u32;
+        proposed_m = proposed_m.wrapping_add(proposed_m);
+        let twice_remainder = remainder.wrapping_add(remainder);
+
+        if twice_remainder >= divisor || twice_remainder < remainder {
+            proposed_m = proposed_m.wrapping_add(1);
+        }
+
+        FastDivU32 {
+            divisor,
+            magic: proposed_m.wrapping_add(1),
+            shift: floor_log2,
+            pad: 0
+        }
+    }
+
+    fn push_dimension(
+        params: &mut BinaryParameters,
+        a: u32,
+        b: u32
+    ) -> Result<(), TensorError> {
+        assert!((a == b) || (a == 1) || (b == 1));
+        if (a == 1) && (b == 1) { return Ok(()) }
+
+        let dimension = Self::boradcast_dimension(a, b)?;
+        let index = params.num_dimensions as usize;
+        if let Some(division) = params.divisions.get_mut(index) {
+            if dimension != 0 {
+                *division = Self::create_div(dimension);
+            }
+        }
+
+        params.length = params.length.checked_mul(dimension)
+            .ok_or(TensorError::OversizedDispatch)?;
+
+        params.mask_a |= ((a != 1) as u32) << params.num_dimensions;
+        params.mask_b |= ((b != 1) as u32) << params.num_dimensions;
+        params.num_dimensions += 1;
+        Ok(())
+    }
+    
+    fn boradcast_dimension(a: u32, b: u32) -> Result<u32, TensorError> {
+        if a == b {
+            Ok(a)
+        } else if a == 1 {
+            Ok(b)
+        } else if b == 1 {
+            Ok(a)
+        } else {
+            Err(TensorError::ShapeMismatch)
+        }
+    }
+}
