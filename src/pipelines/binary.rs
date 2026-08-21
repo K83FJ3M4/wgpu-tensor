@@ -28,16 +28,20 @@ impl<'scope> TensorEncoder<'scope> {
 
         let mut shape = operand_one.shape();
 
+        let mut zero = false;
         for (dst, src) in shape.iter_mut().zip(operand_two.shape()) {
             *dst = Self::boradcast_dimension(*dst, src)?;
+            zero |= *dst == 0;
         }
+
+        let output = self.temp(shape)?;
+        if zero { return Ok(output) }
         
         let params = Self::create_binary_params(
             operand_one.shape(),
             operand_two.shape()
         )?;
 
-        let output = self.temp(shape)?;
         let compute_pass = self.encoder.compute(
             cache(&mut self.pipelines),
             pipeline,
@@ -49,7 +53,9 @@ impl<'scope> TensorEncoder<'scope> {
         output.bind(compute_pass, 3, false);
         let num_workgroups = params.length.div_ceil(256);
 
-        if num_workgroups != 0 {
+        if num_workgroups != 0 && num_workgroups <= u16::MAX as u32 {
+            compute_pass.dispatch_workgroups(num_workgroups, 1, 1); 
+        } else if num_workgroups != 0 {
             let floor = num_workgroups.isqrt();
             let x = floor + (floor * floor != num_workgroups) as u32;
             let y = num_workgroups.div_ceil(x);
