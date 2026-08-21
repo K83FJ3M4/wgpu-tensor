@@ -170,7 +170,7 @@ pub mod shaders {
     pub mod binary {
         #[allow(unused_imports)]
         use super::{BindGroupLayoutPool, BindingShape, BindingSize};
-        pub fn add(pool: &mut BindGroupLayoutPool) -> wgpu::ComputePipeline {
+        pub fn main(pool: &mut BindGroupLayoutPool) -> wgpu::ComputePipeline {
             let bind_group_layout_0 = pool
                 .get(
                     &[
@@ -231,7 +231,7 @@ pub mod shaders {
                 .device
                 .create_pipeline_layout(
                     &wgpu::PipelineLayoutDescriptor {
-                        label: Some("binary::add"),
+                        label: Some("binary::main"),
                         bind_group_layouts,
                         immediate_size: 0u32,
                     },
@@ -239,15 +239,15 @@ pub mod shaders {
             let shader = pool
                 .device
                 .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("binary::add"),
+                    label: Some("binary::main"),
                     source: wgpu::ShaderSource::Wgsl(
-                        include_str!("binary_add.wgsl").into(),
+                        include_str!("binary_main.wgsl").into(),
                     ),
                 });
             pool.device
                 .create_compute_pipeline(
                     &wgpu::ComputePipelineDescriptor {
-                        label: Some("binary::add"),
+                        label: Some("binary::main"),
                         layout: Some(&pipeline_layout),
                         module: &shader,
                         entry_point: Some("main"),

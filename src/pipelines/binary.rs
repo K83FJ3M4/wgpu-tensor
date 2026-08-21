@@ -1,8 +1,6 @@
 use bytemuck::Zeroable;
-use shaders::{BinaryParameters, FastDivU32, Shape};
-use wgpu::ComputePipeline;
-use crate::pipelines::BindGroupLayoutPool;
-use crate::{Pipelines, Tensor, TensorEncoder, TensorError};
+use shaders::{BinaryOperation, BinaryParameters, FastDivU32, Shape};
+use crate::{Tensor, TensorEncoder, TensorError};
 
 impl<'scope> TensorEncoder<'scope> {
     pub fn add(
@@ -11,8 +9,7 @@ impl<'scope> TensorEncoder<'scope> {
         operand_two: &Tensor
     ) -> Result<Tensor<'scope>, TensorError> {
         self.binary(
-            |pipelines| &mut pipelines.add,
-            super::shaders::binary::add,
+            BinaryOperation::ADD,
             operand_one,
             operand_two,
         )
@@ -20,8 +17,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     fn binary(
         &mut self,
-        cache: fn(&mut Pipelines) -> &mut Option<ComputePipeline>,
-        pipeline: fn(&mut BindGroupLayoutPool) -> ComputePipeline,
+        operation: BinaryOperation,
         operand_one: &Tensor,
         operand_two: &Tensor,
     ) -> Result<Tensor<'scope>, TensorError> {
@@ -39,12 +35,13 @@ impl<'scope> TensorEncoder<'scope> {
         
         let params = Self::create_binary_params(
             operand_one.shape(),
-            operand_two.shape()
+            operand_two.shape(),
+            operation
         )?;
 
         let compute_pass = self.encoder.compute(
-            cache(&mut self.pipelines),
-            pipeline,
+            &mut self.pipelines.binary,
+            super::shaders::binary::main,
             &params
         );
 
@@ -67,10 +64,12 @@ impl<'scope> TensorEncoder<'scope> {
 
     fn create_binary_params(
         shape_a: Shape,
-        shape_b: Shape
+        shape_b: Shape,
+        operation: BinaryOperation
     ) -> Result<BinaryParameters, TensorError> {
         let mut accumulator = Option::<[u32; 2]>::None;
         let mut params = BinaryParameters::zeroed();
+        params.operation = operation;
         params.length = 1;
 
         for (a, b) in shape_a.into_iter().zip(shape_b) {
@@ -159,9 +158,12 @@ impl<'scope> TensorEncoder<'scope> {
         params.length = params.length.checked_mul(dimension)
             .ok_or(TensorError::OversizedDispatch)?;
 
-        params.mask_a |= ((a != 1) as u32) << params.num_dimensions;
-        params.mask_b |= ((b != 1) as u32) << params.num_dimensions;
+        let mut masks = unpack_2x_u16(params.masks);
+        masks[0] |= ((a != 1) as u32) << params.num_dimensions;
+        masks[1] |= ((b != 1) as u32) << params.num_dimensions;
+        params.masks = pack_2x_u16(masks);
         params.num_dimensions += 1;
+
         Ok(())
     }
     
@@ -176,4 +178,14 @@ impl<'scope> TensorEncoder<'scope> {
             Err(TensorError::ShapeMismatch)
         }
     }
+}
+
+#[inline]
+pub fn pack_2x_u16([x, y]: [u32; 2]) -> u32 {
+    (x & 0xFFFF) | ((y & 0xFFFF) << 16)
+}
+
+#[inline]
+pub fn unpack_2x_u16(v: u32) -> [u32; 2] {
+    [v & 0xFFFF, v >> 16]
 }

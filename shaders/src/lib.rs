@@ -14,8 +14,8 @@ pub struct BinaryParameters {
     pub divisions: [FastDivU32; 7],
     pub num_dimensions: u32,
     pub length: u32,
-    pub mask_a: u32,
-    pub mask_b: u32
+    pub masks: u32,
+    pub operation: BinaryOperation
 }
 
 #[repr(C)]
@@ -25,4 +25,12 @@ pub struct FastDivU32 {
     pub magic: u32,
     pub shift: u32,
     pub pad: u32,
+}
+
+#[repr(transparent)]
+#[derive(Pod, Zeroable, Clone, Copy, PartialEq)]
+pub struct BinaryOperation(u32);
+
+impl BinaryOperation {
+    pub const ADD: Self = Self(0);
 }
