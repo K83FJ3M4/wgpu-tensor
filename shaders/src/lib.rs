@@ -5,8 +5,17 @@ use bytemuck::{Pod, Zeroable};
 
 #[cfg(any(target_arch = "spirv", spirv))]
 pub mod binary;
+#[cfg(any(target_arch = "spirv", spirv))]
+pub mod unary;
 
 pub type Shape = [u32; 8];
+
+#[repr(C)]
+#[derive(Pod, Zeroable, Clone, Copy)]
+pub struct UnaryParameters {
+    pub length: u32,
+    pub operation: UnaryOperation
+}
 
 #[repr(C)]
 #[derive(Pod, Zeroable, Clone, Copy)]
@@ -40,4 +49,12 @@ impl BinaryOperation {
     pub const MINIMUM: Self = Self(5);
     pub const MAXIMUM: Self = Self(6);
     pub const REMAINDER: Self = Self(7);
+}
+
+#[repr(transparent)]
+#[derive(Pod, Zeroable, Clone, Copy, PartialEq)]
+pub struct UnaryOperation(u32);
+
+impl UnaryOperation {
+    pub const NEGATE: Self = Self(0);
 }

@@ -1,5 +1,7 @@
 use core::ops::Sub;
 
+#[allow(unused)]
+use spirv_std::num_traits::Float;
 use glam::{UVec2, UVec3};
 use spirv_std::spirv;
 
@@ -7,7 +9,7 @@ use crate::{BinaryOperation, BinaryParameters, FastDivU32};
 
 #[unsafe(no_mangle)]
 #[spirv(compute(threads(256)))]
-pub fn main(
+pub fn binary_main(
     #[spirv(global_invocation_id)] invocation: UVec3,
     #[spirv(num_workgroups)] num_workgroups: UVec3,
 
@@ -16,7 +18,7 @@ pub fn main(
     #[spirv(storage_buffer, descriptor_set = 2, binding = 0)] input_b: &[f32],
     #[spirv(storage_buffer, descriptor_set = 3, binding = 0)] output: &mut [f32],
 ) {
-    let mut index = BinaryParameters::invocation_index(invocation, num_workgroups);
+    let mut index = invocation_index(invocation, num_workgroups);
     let output_index = index as usize;
     if index >= params.length { return }
     let max_dimension = params.num_dimensions.max(1).sub(1) as usize;
@@ -63,12 +65,7 @@ impl BinaryParameters {
         }
 
         flat
-    } 
-
-    fn invocation_index(id: UVec3, size: UVec3) -> u32 {
-        let width = size.x * 256;
-        id.x + width * (id.y + size.y * id.z)
-    }
+    }  
 }
 
 impl FastDivU32 {
@@ -173,4 +170,10 @@ pub fn unpack_2x_u16(v: u32) -> UVec2 {
         v & 0xFFFF,
         v >> 16,
     )
+}
+
+#[inline]
+fn invocation_index(id: UVec3, size: UVec3) -> u32 {
+    let width = size.x * 256;
+    id.x + width * (id.y + size.y * id.z)
 }

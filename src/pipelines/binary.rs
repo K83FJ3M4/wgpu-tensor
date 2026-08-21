@@ -125,7 +125,7 @@ impl<'scope> TensorEncoder<'scope> {
 
         let compute_pass = self.encoder.compute(
             &mut self.pipelines.binary,
-            super::shaders::binary::main,
+            super::shaders::binary::binary_main,
             &params
         );
 

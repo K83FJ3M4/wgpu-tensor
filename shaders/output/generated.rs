@@ -170,7 +170,7 @@ pub mod shaders {
     pub mod binary {
         #[allow(unused_imports)]
         use super::{BindGroupLayoutPool, BindingShape, BindingSize};
-        pub fn main(pool: &mut BindGroupLayoutPool) -> wgpu::ComputePipeline {
+        pub fn binary_main(pool: &mut BindGroupLayoutPool) -> wgpu::ComputePipeline {
             let bind_group_layout_0 = pool
                 .get(
                     &[
@@ -231,7 +231,7 @@ pub mod shaders {
                 .device
                 .create_pipeline_layout(
                     &wgpu::PipelineLayoutDescriptor {
-                        label: Some("binary::main"),
+                        label: Some("binary::binary_main"),
                         bind_group_layouts,
                         immediate_size: 0u32,
                     },
@@ -239,15 +239,91 @@ pub mod shaders {
             let shader = pool
                 .device
                 .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("binary::main"),
+                    label: Some("binary::binary_main"),
                     source: wgpu::ShaderSource::Wgsl(
-                        include_str!("binary_main.wgsl").into(),
+                        include_str!("binary_binary_main.wgsl").into(),
                     ),
                 });
             pool.device
                 .create_compute_pipeline(
                     &wgpu::ComputePipelineDescriptor {
-                        label: Some("binary::main"),
+                        label: Some("binary::binary_main"),
+                        layout: Some(&pipeline_layout),
+                        module: &shader,
+                        entry_point: Some("main"),
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        cache: None,
+                    },
+                )
+        }
+    }
+    pub mod unary {
+        #[allow(unused_imports)]
+        use super::{BindGroupLayoutPool, BindingShape, BindingSize};
+        pub fn unary_main(pool: &mut BindGroupLayoutPool) -> wgpu::ComputePipeline {
+            let bind_group_layout_0 = pool
+                .get(
+                    &[
+                        BindingShape::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: true,
+                            size: BindingSize(wgpu::BufferSize::new(8u64).unwrap()),
+                        },
+                    ],
+                )
+                .clone();
+            let bind_group_layout_1 = pool
+                .get(
+                    &[
+                        BindingShape::Buffer {
+                            ty: wgpu::BufferBindingType::Storage {
+                                read_only: true,
+                            },
+                            has_dynamic_offset: false,
+                            size: BindingSize(wgpu::BufferSize::new(4u64).unwrap()),
+                        },
+                    ],
+                )
+                .clone();
+            let bind_group_layout_2 = pool
+                .get(
+                    &[
+                        BindingShape::Buffer {
+                            ty: wgpu::BufferBindingType::Storage {
+                                read_only: false,
+                            },
+                            has_dynamic_offset: false,
+                            size: BindingSize(wgpu::BufferSize::new(4u64).unwrap()),
+                        },
+                    ],
+                )
+                .clone();
+            let bind_group_layouts: &[Option<&wgpu::BindGroupLayout>] = &[
+                Some(&bind_group_layout_0),
+                Some(&bind_group_layout_1),
+                Some(&bind_group_layout_2),
+            ];
+            let pipeline_layout = pool
+                .device
+                .create_pipeline_layout(
+                    &wgpu::PipelineLayoutDescriptor {
+                        label: Some("unary::unary_main"),
+                        bind_group_layouts,
+                        immediate_size: 0u32,
+                    },
+                );
+            let shader = pool
+                .device
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("unary::unary_main"),
+                    source: wgpu::ShaderSource::Wgsl(
+                        include_str!("unary_unary_main.wgsl").into(),
+                    ),
+                });
+            pool.device
+                .create_compute_pipeline(
+                    &wgpu::ComputePipelineDescriptor {
+                        label: Some("unary::unary_main"),
                         layout: Some(&pipeline_layout),
                         module: &shader,
                         entry_point: Some("main"),

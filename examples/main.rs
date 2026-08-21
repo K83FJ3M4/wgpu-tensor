@@ -45,10 +45,9 @@ fn main() {
         encoder.write(&tensor_b, repeat(10.0).take(4));
 
         let output_a = encoder.add(&tensor_a, &tensor_b)?;
-        let output_b = encoder.add(&tensor_a, &tensor_b)?;
+        let output_a = encoder.negate(&output_a)?;
 
         encoder.read(&output_a, PrintTensorReader::new());
-        encoder.read(&output_b, PrintTensorReader::new());
         Result::<_, TensorError>::Ok(())
     }).unwrap();
 
