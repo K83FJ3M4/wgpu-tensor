@@ -69,32 +69,33 @@ impl<'scope> TensorEncoder<'scope> {
         shape_a: Shape,
         shape_b: Shape
     ) -> Result<BinaryParameters, TensorError> {
-        let mut accumulator = None;
+        let mut accumulator = Option::<[u32; 2]>::None;
         let mut params = BinaryParameters::zeroed();
         params.length = 1;
 
         for (a, b) in shape_a.into_iter().zip(shape_b) {
-            if (a == 1 || b == 1) && a != b {
-                if let Some(a) = accumulator.take() {
-                    Self::push_dimension(&mut params, a, a)?;
-                }
+            Self::boradcast_dimension(a, b)?;
+            if a == 1 && b == 1 { continue }
 
-                Self::push_dimension(&mut params, a, b)?;
-            } else if a == b {
-                if let Some(accumulator) = accumulator.as_mut() {
-                    *accumulator = accumulator.checked_mul(a)
-                        .ok_or(TensorError::OversizedDispatch)?;
-                } else {
-                    accumulator = Some(a);
+            if let Some([acc_a, acc_b]) = accumulator.as_mut()
+                .filter(|accumulator| {
+                    accumulator.map(|dimension| dimension != 1)
+                    .eq(&[a, b].map(|dimension| dimension != 1))
                 }
+            ) {
+                let error = TensorError::OversizedDispatch;
+                *acc_a = acc_a.checked_mul(a).ok_or(error)?;
+                *acc_b = acc_b.checked_mul(b).ok_or(error)?;
             } else {
-                return Err(TensorError::ShapeMismatch)
-            } 
+                if let Some([acc_a, acc_b]) = accumulator.replace([a, b]) {
+                    Self::push_dimension(&mut params, acc_a, acc_b)?;
+                }
+            }
         }
 
-        if let Some(a) = accumulator {
-            Self::push_dimension(&mut params, a, a)?;
-        }
+        if let Some([a, b]) = accumulator {
+            Self::push_dimension(&mut params, a, b)?;
+        } 
 
         Ok(params)
     } 
