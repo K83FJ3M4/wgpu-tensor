@@ -44,10 +44,11 @@ fn main() {
         encoder.write(&tensor_a, repeat(2.0).take(4));
         encoder.write(&tensor_b, repeat(10.0).take(4));
 
-        let output_a = encoder.add(&tensor_a, &tensor_b)?;
-        let output_a = encoder.negate(&output_a)?;
+        let output = encoder.add(&tensor_a, &tensor_b)?;
+        //let output = encoder.negate(&output)?;
+        let output = encoder.reciprocal_square_root(&output)?;
 
-        encoder.read(&output_a, PrintTensorReader::new());
+        encoder.read(&output, PrintTensorReader::new());
         Result::<_, TensorError>::Ok(())
     }).unwrap();
 

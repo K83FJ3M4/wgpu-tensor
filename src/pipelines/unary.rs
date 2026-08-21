@@ -13,6 +13,66 @@ impl<'scope> TensorEncoder<'scope> {
         )
     }
 
+    pub fn absolute(
+        &mut self,
+        operand: &Tensor,
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.unary(
+            UnaryOperation::ABSOLUTE,
+            operand,
+        )
+    }
+
+    pub fn reciprocal(
+        &mut self,
+        operand: &Tensor,
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.unary(
+            UnaryOperation::RECIPROCAL,
+            operand,
+        )
+    }
+
+    pub fn square_root(
+        &mut self,
+        operand: &Tensor,
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.unary(
+            UnaryOperation::SQUARE_ROOT,
+            operand,
+        )
+    }
+
+    pub fn reciprocal_square_root(
+        &mut self,
+        operand: &Tensor,
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.unary(
+            UnaryOperation::RECIPROCAL_SQUARE_ROOT,
+            operand,
+        )
+    }
+
+    pub fn exponential(
+        &mut self,
+        operand: &Tensor,
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.unary(
+            UnaryOperation::EXPONENTIAL,
+            operand,
+        )
+    }
+
+    pub fn logarithm(
+        &mut self,
+        operand: &Tensor,
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.unary(
+            UnaryOperation::LOGARITHM,
+            operand,
+        )
+    }
+
     fn unary(
         &mut self,
         operation: UnaryOperation,

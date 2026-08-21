@@ -21,33 +21,62 @@ var<storage> input: type_5;
 var<storage, read_write> output: type_5;
 
 fn function_() {
-    var phi_67_: f32;
+    var phi_82_: f32;
 
     switch bitcast<i32>(0u) {
         default: {
-            let _e10 = invocation_1;
-            let _e11 = num_workgroups_1;
-            let _e25 = (_e10.x + ((_e11.x * 256u) * (_e10.y + (_e11.y * _e10.z))));
-            let _e28 = params.member.start;
-            if (_e25 >= _e28) {
+            let _e11 = invocation_1;
+            let _e12 = num_workgroups_1;
+            let _e26 = (_e11.x + ((_e12.x * 256u) * (_e11.y + (_e12.y * _e11.z))));
+            let _e29 = params.member.start;
+            if (_e26 >= _e29) {
             } else {
-                let _e32 = params.member.end;
-                if (_e32 == 0u) {
-                    if (_e25 < arrayLength((&input.member))) {
-                    } else {
-                        break;
-                    }
-                    let _e37 = input.member[_e25];
-                    phi_67_ = -(_e37);
-                } else {
-                    phi_67_ = 0f;
-                }
-                let _e40 = phi_67_;
-                if (_e25 < arrayLength((&output.member))) {
+                if (_e26 < arrayLength((&input.member))) {
                 } else {
                     break;
                 }
-                output.member[_e25] = _e40;
+                let _e34 = input.member[_e26];
+                let _e37 = params.member.end;
+                switch bitcast<i32>(_e37) {
+                    case 0: {
+                        phi_82_ = -(_e34);
+                        break;
+                    }
+                    case 1: {
+                        phi_82_ = abs(_e34);
+                        break;
+                    }
+                    case 2: {
+                        phi_82_ = (1f / _e34);
+                        break;
+                    }
+                    case 3: {
+                        phi_82_ = sqrt(_e34);
+                        break;
+                    }
+                    case 4: {
+                        phi_82_ = inverseSqrt(_e34);
+                        break;
+                    }
+                    case 5: {
+                        phi_82_ = exp(_e34);
+                        break;
+                    }
+                    case 6: {
+                        phi_82_ = log(_e34);
+                        break;
+                    }
+                    default: {
+                        phi_82_ = 0f;
+                        break;
+                    }
+                }
+                let _e47 = phi_82_;
+                if (_e26 < arrayLength((&output.member))) {
+                } else {
+                    break;
+                }
+                output.member[_e26] = _e47;
             }
             break;
         }

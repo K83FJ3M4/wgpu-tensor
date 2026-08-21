@@ -1,5 +1,6 @@
 #![no_std]
 #![allow(unexpected_cfgs)]
+#![cfg_attr(target_arch = "spirv", feature(asm_experimental_arch))]
 
 use bytemuck::{Pod, Zeroable};
 
@@ -57,4 +58,10 @@ pub struct UnaryOperation(u32);
 
 impl UnaryOperation {
     pub const NEGATE: Self = Self(0);
+    pub const ABSOLUTE: Self = Self(1);
+    pub const RECIPROCAL: Self = Self(2);
+    pub const SQUARE_ROOT: Self = Self(3);
+    pub const RECIPROCAL_SQUARE_ROOT: Self = Self(4);
+    pub const EXPONENTIAL: Self = Self(5);
+    pub const LOGARITHM: Self = Self(6);
 }

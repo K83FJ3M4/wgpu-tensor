@@ -1,5 +1,10 @@
+use core::arch::asm;
+
 use glam::UVec3;
 use spirv_std::spirv;
+
+#[allow(unused)]
+use spirv_std::num_traits::Float;
 
 use crate::{UnaryOperation, UnaryParameters};
 
@@ -16,10 +21,32 @@ pub fn unary_main(
     let index = invocation_index(invocation, num_workgroups);
     if index >= params.length { return }
 
+    let input = input[index as usize];
     output[index as usize] = match params.operation {
-        UnaryOperation::NEGATE => -input[index as usize],
+        UnaryOperation::NEGATE => -input,
+        UnaryOperation::ABSOLUTE => input.abs(),
+        UnaryOperation::RECIPROCAL => input.recip(),
+        UnaryOperation::SQUARE_ROOT => input.sqrt(),
+        UnaryOperation::RECIPROCAL_SQUARE_ROOT => inverse_sqrt(input),
+        UnaryOperation::EXPONENTIAL => input.exp(),
+        UnaryOperation::LOGARITHM => input.ln(),
         _ => 0.0
     }
+}
+
+#[allow(asm_sub_register)]
+#[inline(always)]
+fn inverse_sqrt(value: f32) -> f32 {
+    let result;
+    unsafe {
+        asm!(
+            "%glsl = OpExtInstImport \"GLSL.std.450\"",
+            "{result} = OpExtInst typeof*{result} %glsl 32 {value}",
+            value = in(reg) value,
+            result = out(reg) result,
+        );
+    }
+    result
 }
 
 #[inline]
