@@ -88,5 +88,7 @@ pub struct ReductionOperation(u32);
 
 impl ReductionOperation {
     pub const SUM: Self = Self(0);
+    pub const PRODUCT: Self = Self(1);
+    pub const MINIMUM: Self = Self(2);
+    pub const MAXIMUM: Self = Self(3);
 }
-

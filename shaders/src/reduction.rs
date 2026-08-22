@@ -108,6 +108,11 @@ impl ReductionOperation {
     fn identity(self) -> f32 {
         match self {
             Self::SUM => 0.0,
+            Self::PRODUCT => 1.0,
+            Self::MINIMUM | Self::MAXIMUM => {
+                let sign = (self.0 - Self::MINIMUM.0) << 31;
+                f32::from_bits(0x7f80_0000 | sign)
+            },
             _ => 0.0
         }
     }
@@ -116,7 +121,32 @@ impl ReductionOperation {
     fn reduce(self, lhs: f32, rhs: f32) -> f32 {
         match self {
             Self::SUM => lhs + rhs,
+            Self::PRODUCT => lhs * rhs,
+            Self::MINIMUM => minimum(lhs, rhs),
+            Self::MAXIMUM => maximum(lhs, rhs),
             _ => 0.0
         }
+    }
+}
+
+#[inline(always)]
+fn minimum(lhs: f32, rhs: f32) -> f32 {
+    if lhs.is_nan() {
+        lhs
+    } else if rhs.is_nan() {
+        rhs
+    } else {
+        lhs.min(rhs)
+    }
+}
+
+#[inline(always)]
+fn maximum(lhs: f32, rhs: f32) -> f32 {
+    if lhs.is_nan() {
+        lhs
+    } else if rhs.is_nan() {
+        rhs
+    } else {
+        lhs.max(rhs)
     }
 }

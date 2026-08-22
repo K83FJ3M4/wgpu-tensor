@@ -15,6 +15,42 @@ impl<'scope> TensorEncoder<'scope> {
             dimensions
         )
     }
+
+    pub fn prod(
+        &mut self,
+        operand: &Tensor,
+        dimensions: impl IntoIndices
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.reduction(
+            ReductionOperation::PRODUCT,
+            operand,
+            dimensions
+        )
+    }
+
+    pub fn min(
+        &mut self,
+        operand: &Tensor,
+        dimensions: impl IntoIndices
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.reduction(
+            ReductionOperation::MINIMUM,
+            operand,
+            dimensions
+        )
+    }
+
+    pub fn max(
+        &mut self,
+        operand: &Tensor,
+        dimensions: impl IntoIndices
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.reduction(
+            ReductionOperation::MAXIMUM,
+            operand,
+            dimensions
+        )
+    }
     
     fn reduction(
         &mut self,
