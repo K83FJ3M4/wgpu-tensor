@@ -13,15 +13,15 @@ struct type_10 {
 
 var<private> invocation_1: vec3<u32>;
 var<private> num_workgroups_1: vec3<u32>;
-@group(0) @binding(0) 
-var<uniform> params: type_10;
 @group(1) @binding(0) 
 var<storage> input: type_5;
 @group(2) @binding(0) 
 var<storage, read_write> output: type_5;
+@group(0) @binding(0) 
+var<uniform> params: type_10;
 
 fn function_() {
-    var phi_82_: f32;
+    var phi_83_: f32;
 
     switch bitcast<i32>(0u) {
         default: {
@@ -39,39 +39,43 @@ fn function_() {
                 let _e37 = params.member.end;
                 switch bitcast<i32>(_e37) {
                     case 0: {
-                        phi_82_ = -(_e34);
+                        phi_83_ = -(_e34);
                         break;
                     }
                     case 1: {
-                        phi_82_ = abs(_e34);
+                        phi_83_ = abs(_e34);
                         break;
                     }
                     case 2: {
-                        phi_82_ = (1f / _e34);
+                        phi_83_ = (1f / _e34);
                         break;
                     }
                     case 3: {
-                        phi_82_ = sqrt(_e34);
+                        phi_83_ = sqrt(_e34);
                         break;
                     }
                     case 4: {
-                        phi_82_ = inverseSqrt(_e34);
+                        phi_83_ = inverseSqrt(_e34);
                         break;
                     }
                     case 5: {
-                        phi_82_ = exp(_e34);
+                        phi_83_ = exp(_e34);
                         break;
                     }
                     case 6: {
-                        phi_82_ = log(_e34);
+                        phi_83_ = log(_e34);
+                        break;
+                    }
+                    case 7: {
+                        phi_83_ = _e34;
                         break;
                     }
                     default: {
-                        phi_82_ = 0f;
+                        phi_83_ = 0f;
                         break;
                     }
                 }
-                let _e47 = phi_82_;
+                let _e47 = phi_83_;
                 if (_e26 < arrayLength((&output.member))) {
                 } else {
                     break;

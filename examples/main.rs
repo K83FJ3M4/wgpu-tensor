@@ -47,6 +47,7 @@ fn main() {
         let output = encoder.add(&tensor_a, &tensor_b)?;
         //let output = encoder.negate(&output)?;
         let output = encoder.reciprocal_square_root(&output)?;
+        let output = encoder.sum(&output, 0)?;
 
         encoder.read(&output, PrintTensorReader::new());
         Result::<_, TensorError>::Ok(())

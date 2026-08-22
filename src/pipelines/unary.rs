@@ -11,7 +11,7 @@ impl<'scope> TensorEncoder<'scope> {
             UnaryOperation::NEGATE,
             operand,
         )
-    }
+    } 
 
     pub fn absolute(
         &mut self,
@@ -69,6 +69,16 @@ impl<'scope> TensorEncoder<'scope> {
     ) -> Result<Tensor<'scope>, TensorError> {
         self.unary(
             UnaryOperation::LOGARITHM,
+            operand,
+        )
+    }
+
+    pub(crate) fn copy(
+        &mut self,
+        operand: &Tensor,
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.unary(
+            UnaryOperation::COPY,
             operand,
         )
     }

@@ -1,5 +1,5 @@
 
-pub use tensor::{Tensor, IntoShape};
+pub use tensor::{Tensor, IntoShape, IntoIndices};
 pub use staging::{TensorReader, TensorWriter, PrintTensorReader};
 use wgpu::{BufferView, BufferViewMut, CommandEncoder, Device};
 
@@ -40,7 +40,8 @@ pub struct TensorEncoder<'scope> {
 pub enum TensorError {
     ShapeMismatch,
     OversizedTensor,
-    OversizedDispatch
+    OversizedDispatch,
+    IndexOutOfBounds
 }
 
 impl TensorContext {

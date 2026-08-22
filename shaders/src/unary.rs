@@ -30,6 +30,7 @@ pub fn unary_main(
         UnaryOperation::RECIPROCAL_SQUARE_ROOT => inverse_sqrt(input),
         UnaryOperation::EXPONENTIAL => input.exp(),
         UnaryOperation::LOGARITHM => input.ln(),
+        UnaryOperation::COPY => input,
         _ => 0.0
     }
 }

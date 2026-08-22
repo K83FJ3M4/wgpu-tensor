@@ -4,11 +4,13 @@ use bytemuck::Contiguous;
 use shaders::Shape;
 use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, COPY_BUFFER_ALIGNMENT, ComputePass, Device};
 pub use shape::IntoShape;
+pub use indices::IntoIndices;
 pub(super) use pool::TensorPool;
 
 use crate::{TensorContext, TensorError};
 use crate::pipelines::{BindGroupLayoutPool, BindingShape, BindingSize};
 
+mod indices;
 mod shape;
 mod pool;
 
