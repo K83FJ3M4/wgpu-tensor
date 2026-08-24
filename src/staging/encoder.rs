@@ -3,20 +3,19 @@ use std::num::NonZeroU64;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use bytemuck::{Pod, bytes_of};
-use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindingResource, Buffer, BufferAddress, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, BufferViewMut, CommandEncoder, ComputePass, ComputePassDescriptor, ComputePipeline, Device, MapMode};
+use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindingResource, Buffer, BufferAddress, BufferBinding, BufferDescriptor, BufferUsages, BufferViewMut, CommandEncoder, ComputePass, ComputePassDescriptor, ComputePipeline, Device, MapMode};
 
-use crate::pipelines::{BindGroupLayoutPool, BindingShape, BindingSize};
+use crate::pipelines::Pipelines;
 
 const CPU_BLOCK_SIZE: u64 = 4 << 20;
 const GPU_BLOCK_SIZE: u64 = 256 << 10;
 
 pub(crate) struct EncoderPool {
     parameters: Buffer,
-    bind_group_layouts: BindGroupLayoutPool,
+    pipelines: Pipelines,
     bind_groups: HashMap<usize, BindGroup>,
     receiver: Receiver<Buffer>,
     sender: Sender<Buffer>,
-    device: Device
 }
 
 pub(crate) struct Encoder<'a> {
@@ -50,13 +49,12 @@ impl<'a> Encoder<'a> {
 
     pub(crate) fn compute<T: Pod>(
         &mut self,
-        cache: &mut Option<ComputePipeline>,
-        init: impl FnOnce(&mut BindGroupLayoutPool) -> ComputePipeline,
+        pipeline: fn(&mut Pipelines) -> &ComputePipeline,
         params: &T
     ) -> &mut ComputePass<'static> {
         let bytes = bytes_of(params);
         let length = bytes.len() as BufferAddress;
-        let align = self.pool.device.limits()
+        let align = self.pool.pipelines.device.limits()
             .min_uniform_buffer_offset_alignment as u64;
 
         assert!((size_of::<T>() as u64) > 0);
@@ -132,13 +130,8 @@ impl<'a> Encoder<'a> {
             &[self.gpu_offset as u32]
         );
 
-        if let Some(pipeline) = cache {
-            compute_pass.set_pipeline(pipeline);
-        } else {
-            let pipeline = init(&mut self.pool.bind_group_layouts);
-            compute_pass.set_pipeline(&pipeline);
-            *cache = Some(pipeline);
-        }
+        let pipeline = pipeline(&mut self.pool.pipelines);
+        compute_pass.set_pipeline(pipeline);
 
         self.cpu_offset += length;
         self.gpu_offset += length;
@@ -150,17 +143,13 @@ impl<'a> Encoder<'a> {
         &mut self.command_encoder
     } 
 
-    pub(crate) fn bind_group_layouts(
-        &mut self
-    ) -> &mut BindGroupLayoutPool {
-        &mut self.pool.bind_group_layouts
+    pub(crate) fn pipelines(&mut self) -> &mut Pipelines {
+        &mut self.pool.pipelines
     }
 }
 
 impl EncoderPool {
-    pub(crate) fn new(device: &Device) -> EncoderPool {
-        let pool = BindGroupLayoutPool::new(device)
-            .expect("Incorrect device limits");
+    pub(crate) fn new(device: Device) -> EncoderPool {
 
         let (sender, receiver) = channel();
         let parameters = device.create_buffer(&BufferDescriptor {
@@ -172,9 +161,8 @@ impl EncoderPool {
         });
 
         EncoderPool {
-            bind_group_layouts: pool,
+            pipelines: Pipelines::new(device),
             bind_groups: HashMap::new(),
-            device: device.clone(),
             parameters,
             receiver,
             sender
@@ -182,14 +170,10 @@ impl EncoderPool {
     }
 
     fn bind_group<'a, T: Pod>(&'a mut self) -> &'a BindGroup {
+        let layout = self.pipelines.param_layouts
+            .get::<T>(&self.pipelines.device);
         self.bind_groups.entry(size_of::<T>()).or_insert_with(|| {
-            let layout = self.bind_group_layouts.get(&[BindingShape::Buffer {
-                has_dynamic_offset: true,
-                size: BindingSize::of::<T>(),
-                ty: BufferBindingType::Uniform
-            }]);
-
-            self.device.create_bind_group(&BindGroupDescriptor {
+            self.pipelines.device.create_bind_group(&BindGroupDescriptor {
                 label: None,
                 layout,
                 entries: &[BindGroupEntry {
@@ -214,7 +198,7 @@ impl EncoderPool {
             }
         }
 
-        let buffer = self.device.create_buffer(&BufferDescriptor {
+        let buffer = self.pipelines.device.create_buffer(&BufferDescriptor {
             usage: BufferUsages::MAP_WRITE | BufferUsages::COPY_SRC,
             mapped_at_creation: true,
             size: CPU_BLOCK_SIZE,
@@ -228,10 +212,8 @@ impl EncoderPool {
         } 
     }
 
-    pub(crate) fn bind_group_layouts(
-        &mut self
-    ) -> &mut BindGroupLayoutPool {
-        &mut self.bind_group_layouts
+    pub(crate) fn pipelines(&mut self) -> &mut Pipelines {
+        &mut self.pipelines
     }
 }
 

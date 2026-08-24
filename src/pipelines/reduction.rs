@@ -1,7 +1,30 @@
-use bytemuck::Zeroable;
-use shaders::{ReductionOperation, ReductionParameters};
+use bytemuck::{Pod, Zeroable};
+use wgpu::{ComputePipeline, ComputePipelineDescriptor, PipelineLayoutDescriptor, include_wgsl};
 
+use crate::pipelines::Pipelines;
 use crate::{IntoIndices, Tensor, TensorEncoder, TensorError};
+
+#[repr(C)]
+#[derive(Pod, Zeroable, Clone, Copy)]
+pub struct ReductionParameters {
+    pub operation: ReductionOperation,
+    pub cluster_shift: u32,
+
+    pub inner_size: u32,
+    pub reduction_size: u32,
+    pub outer_size: u32
+}
+
+#[repr(transparent)]
+#[derive(Pod, Zeroable, Clone, Copy, PartialEq)]
+pub struct ReductionOperation(u32);
+
+impl ReductionOperation {
+    pub const SUM: Self = Self(0);
+    pub const PRODUCT: Self = Self(1);
+    pub const MINIMUM: Self = Self(2);
+    pub const MAXIMUM: Self = Self(3);
+}
 
 impl<'scope> TensorEncoder<'scope> {
     pub fn sum(
@@ -99,8 +122,7 @@ impl<'scope> TensorEncoder<'scope> {
 
             let output = self.temp(shape)?;
             let compute_pass = self.encoder.compute(
-                &mut self.pipelines.reduction,
-                super::shaders::reduction::reduction_main,
+                Pipelines::reduction,
                 &params
             );
 
@@ -133,5 +155,41 @@ impl<'scope> TensorEncoder<'scope> {
                 temp = Some(output)
             }
         }
+    }
+}
+
+impl Pipelines {
+    fn reduction(&mut self) -> &ComputePipeline {
+        self.reduction.get_or_insert_with(|| {
+            let module = self.device.create_shader_module(
+                include_wgsl!(concat!(env!("OUT_DIR"), "/reduction.wgsl"))
+            );
+
+            let param_layout = self.param_layouts
+                .get::<ReductionParameters>(&self.device);
+
+            let layout = self.device.create_pipeline_layout(
+                &PipelineLayoutDescriptor {
+                    label: Some("Reduction"),
+                    immediate_size: 0,
+                    bind_group_layouts: &[
+                        Some(param_layout),
+                        Some(&self.tensor_input_layout),
+                        Some(&self.tensor_output_layout)
+                    ]
+                }
+            );
+
+            self.device.create_compute_pipeline(
+                &ComputePipelineDescriptor {
+                    label: Some("Reduction"),
+                    compilation_options: Default::default(),
+                    cache: None,
+                    layout: Some(&layout),
+                    entry_point: Some("reduction"),
+                    module: &module
+                }
+            )
+        })
     }
 }

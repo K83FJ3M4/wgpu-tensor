@@ -1,4 +1,4 @@
-use shaders::Shape;
+pub type Shape = [u32; 8];
 
 pub trait IntoShape {
     fn shape(self) -> Shape;

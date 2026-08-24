@@ -1,17 +1,16 @@
 
-pub use tensor::{Tensor, IntoShape, IntoIndices};
+pub use tensor::{Tensor, IntoShape, IntoIndices, Shape};
 pub use staging::{TensorReader, TensorWriter, PrintTensorReader};
-use wgpu::{BufferView, BufferViewMut, CommandEncoder, Device};
+use wgpu::{BufferView, BufferViewMut, CommandEncoder, Device, DownlevelFlags, Features, Limits};
 
-use crate::pipelines::{Pipelines};
 use crate::staging::{Encoder, EncoderPool, StagingAllocator, StagingAllocatorPool};
 use crate::tensor::TensorPool;
 
-pub use pipelines::{
-    ALL_FEATURES,
-    BASELINE_DOWNLEVEL_FLAGS,
-    BASELINE_FEATURES,
-    BASELINE_LIMITS
+pub const OPTIONAL_FEATURES: Features = Features::empty();
+pub const REQUIRED_LIMITS: Limits = Limits::defaults();
+pub const REQUIRED_DOWNLEVEL_FLAGS: DownlevelFlags = {
+    DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED
+        .union(DownlevelFlags::COMPUTE_SHADERS)
 };
 
 mod tensor;
@@ -22,18 +21,14 @@ pub struct TensorContext {
     write_pool: StagingAllocatorPool<BufferViewMut>,
     read_pool: StagingAllocatorPool<BufferView>,
     encoder_pool: EncoderPool,
-    tensors: TensorPool,
-    pipelines: Pipelines,
-    device: Device
+    tensors: TensorPool
 }
 
 pub struct TensorEncoder<'scope> {
-    pipelines: &'scope mut Pipelines,
     read_allocator: StagingAllocator<'scope, BufferView>,
     write_allocator: StagingAllocator<'scope, BufferViewMut>,
-    encoder: Encoder<'scope>,
     tensors: &'scope TensorPool,
-    device: &'scope Device
+    encoder: Encoder<'scope>
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -49,15 +44,13 @@ impl TensorContext {
         let tensors = TensorPool::new();
         let read_pool = StagingAllocatorPool::new(device.clone());
         let write_pool = StagingAllocatorPool::new(device.clone());
-        let encoder_pool = EncoderPool::new(&device);
+        let encoder_pool = EncoderPool::new(device);
 
         TensorContext {
-            tensors,
-            pipelines: Pipelines::default(),
             encoder_pool,
             read_pool,
             write_pool,
-            device
+            tensors,
         }
     }
 
@@ -71,11 +64,9 @@ impl TensorContext {
         let encoder = Encoder::new(&mut self.encoder_pool, encoder);
 
         callback(&mut TensorEncoder {
-            pipelines: &mut self.pipelines,
             tensors: &mut self.tensors,
             read_allocator,
             write_allocator,
-            device: &self.device,
             encoder 
         })
     }

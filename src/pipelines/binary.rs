@@ -1,6 +1,41 @@
-use bytemuck::Zeroable;
-use shaders::{BinaryOperation, BinaryParameters, FastDivU32, Shape};
-use crate::{Tensor, TensorEncoder, TensorError};
+use bytemuck::{Pod, Zeroable};
+use wgpu::{ComputePipeline, ComputePipelineDescriptor, PipelineLayoutDescriptor, include_wgsl};
+use crate::pipelines::Pipelines;
+use crate::{Shape, Tensor, TensorEncoder, TensorError};
+
+#[repr(C)]
+#[derive(Pod, Zeroable, Clone, Copy)]
+pub struct BinaryParameters {
+    pub divisions: [FastDivU32; 7],
+    pub num_dimensions: u32,
+    pub length: u32,
+    pub masks: u32,
+    pub operation: BinaryOperation
+}
+
+#[repr(C)]
+#[derive(Pod, Zeroable, Clone, Copy)]
+pub struct FastDivU32 {
+    pub divisor: u32,
+    pub magic: u32,
+    pub shift: u32,
+    pub pad: u32,
+}
+
+#[repr(transparent)]
+#[derive(Pod, Zeroable, Clone, Copy, PartialEq)]
+pub struct BinaryOperation(u32);
+
+impl BinaryOperation {
+    pub const ADD: Self = Self(0);
+    pub const SUBTRACT: Self = Self(1);
+    pub const MULTIPLY: Self = Self(2);
+    pub const DIVIDE: Self = Self(3);
+    pub const POWER: Self = Self(4);
+    pub const MINIMUM: Self = Self(5);
+    pub const MAXIMUM: Self = Self(6);
+    pub const REMAINDER: Self = Self(7);
+}
 
 impl<'scope> TensorEncoder<'scope> {
     pub fn add(
@@ -124,8 +159,7 @@ impl<'scope> TensorEncoder<'scope> {
         )?;
 
         let compute_pass = self.encoder.compute(
-            &mut self.pipelines.binary,
-            super::shaders::binary::binary_main,
+            Pipelines::binary,
             &params
         );
 
@@ -272,4 +306,41 @@ pub fn pack_2x_u16([x, y]: [u32; 2]) -> u32 {
 #[inline]
 pub fn unpack_2x_u16(v: u32) -> [u32; 2] {
     [v & 0xFFFF, v >> 16]
+}
+
+impl Pipelines {
+    fn binary(&mut self) -> &ComputePipeline {
+        self.binary.get_or_insert_with(|| {
+            let module = self.device.create_shader_module(
+                include_wgsl!(concat!(env!("OUT_DIR"), "/binary.wgsl"))
+            );
+
+            let param_layout = self.param_layouts
+                .get::<BinaryParameters>(&self.device);
+
+            let layout = self.device.create_pipeline_layout(
+                &PipelineLayoutDescriptor {
+                    label: Some("Binary"),
+                    immediate_size: 0,
+                    bind_group_layouts: &[
+                        Some(param_layout),
+                        Some(&self.tensor_input_layout),
+                        Some(&self.tensor_input_layout),
+                        Some(&self.tensor_output_layout)
+                    ]
+                }
+            );
+
+            self.device.create_compute_pipeline(
+                &ComputePipelineDescriptor {
+                    label: Some("Binary"),
+                    compilation_options: Default::default(),
+                    cache: None,
+                    layout: Some(&layout),
+                    entry_point: Some("binary"),
+                    module: &module
+                }
+            )
+        })
+    }
 }

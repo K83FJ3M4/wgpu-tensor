@@ -1,14 +1,13 @@
 use std::sync::mpsc::Sender;
 
 use bytemuck::Contiguous;
-use shaders::Shape;
-use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, COPY_BUFFER_ALIGNMENT, ComputePass, Device};
-pub use shape::IntoShape;
+use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress, BufferDescriptor, BufferSize, BufferUsages, COPY_BUFFER_ALIGNMENT, ComputePass, Device};
+pub use shape::{Shape, IntoShape};
 pub use indices::IntoIndices;
 pub(super) use pool::TensorPool;
 
+use crate::pipelines::Pipelines;
 use crate::{TensorContext, TensorError};
-use crate::pipelines::{BindGroupLayoutPool, BindingShape, BindingSize};
 
 mod indices;
 mod shape;
@@ -29,9 +28,8 @@ impl Tensor<'static> {
     ) -> Result<Tensor<'static>, TensorError> {
         let shape = shape.shape();
         Ok(Self::create(
-            &mut context.encoder_pool.bind_group_layouts(),
-            &context.device, shape,
-            Self::buffer_size(shape)?
+            &mut context.encoder_pool.pipelines(),
+            shape, Self::buffer_size(shape)?
         ))
     }
 }
@@ -49,12 +47,11 @@ impl<'scope> Tensor<'scope> {
     }
     
     fn create(
-        bind_group_layouts: &mut BindGroupLayoutPool,
-        device: &Device,
+        pipelines: &mut Pipelines,
         shape: Shape,
         size: BufferSize,
     ) -> Tensor<'static> {
-        let buffer = device.create_buffer(
+        let buffer = pipelines.device.create_buffer(
             &BufferDescriptor {
                 label: None,
                 size: size.get(),
@@ -66,28 +63,14 @@ impl<'scope> Tensor<'scope> {
         );
 
         let read_bind_group = Self::create_bind_group(
-            device, bind_group_layouts.get(&[
-                BindingShape::Buffer {
-                    has_dynamic_offset: false,
-                    size: BindingSize::of::<f32>(),
-                    ty: BufferBindingType::Storage {
-                        read_only: true
-                    }
-                } 
-            ]),
+            &pipelines.device,
+            &pipelines.tensor_input_layout,
             &buffer
         );
 
         let write_bind_group = Self::create_bind_group(
-            device, bind_group_layouts.get(&[
-                BindingShape::Buffer {
-                    has_dynamic_offset: false,
-                    size: BindingSize::of::<f32>(),
-                    ty: BufferBindingType::Storage {
-                        read_only: false
-                    }
-                } 
-            ]),
+            &pipelines.device,
+            &pipelines.tensor_output_layout, 
             &buffer
         );
 

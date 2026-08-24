@@ -1,6 +1,30 @@
-use shaders::{UnaryOperation, UnaryParameters};
+use bytemuck::{Pod, Zeroable};
+use wgpu::{ComputePipeline, ComputePipelineDescriptor, PipelineLayoutDescriptor, include_wgsl};
 
+use crate::pipelines::Pipelines;
 use crate::{Tensor, TensorEncoder, TensorError};
+
+#[repr(C)]
+#[derive(Pod, Zeroable, Clone, Copy)]
+pub struct UnaryParameters {
+    pub length: u32,
+    pub operation: UnaryOperation
+}
+
+#[repr(transparent)]
+#[derive(Pod, Zeroable, Clone, Copy, PartialEq)]
+pub struct UnaryOperation(u32);
+
+impl UnaryOperation {
+    pub const NEGATE: Self = Self(0);
+    pub const ABSOLUTE: Self = Self(1);
+    pub const RECIPROCAL: Self = Self(2);
+    pub const SQUARE_ROOT: Self = Self(3);
+    pub const RECIPROCAL_SQUARE_ROOT: Self = Self(4);
+    pub const EXPONENTIAL: Self = Self(5);
+    pub const LOGARITHM: Self = Self(6);
+    pub const COPY: Self = Self(7);
+}
 
 impl<'scope> TensorEncoder<'scope> {
     pub fn negate(
@@ -73,7 +97,7 @@ impl<'scope> TensorEncoder<'scope> {
         )
     }
 
-    pub(crate) fn copy(
+    pub fn copy(
         &mut self,
         operand: &Tensor,
     ) -> Result<Tensor<'scope>, TensorError> {
@@ -102,11 +126,10 @@ impl<'scope> TensorEncoder<'scope> {
         }
 
         let output = self.temp(operand.shape())?;
-        if zero { return Ok(output) }   
+        if zero { return Ok(output) }
 
         let compute_pass = self.encoder.compute(
-            &mut self.pipelines.unary,
-            super::shaders::unary::unary_main,
+            Pipelines::unary,
             &params
         );
 
@@ -124,5 +147,41 @@ impl<'scope> TensorEncoder<'scope> {
         }
 
         Ok(output)
+    }
+}
+
+impl Pipelines {
+    fn unary(&mut self) -> &ComputePipeline {
+        self.unary.get_or_insert_with(|| {
+            let module = self.device.create_shader_module(
+                include_wgsl!(concat!(env!("OUT_DIR"), "/unary.wgsl"))
+            );
+
+            let param_layout = self.param_layouts
+                .get::<UnaryParameters>(&self.device);
+
+            let layout = self.device.create_pipeline_layout(
+                &PipelineLayoutDescriptor {
+                    label: Some("Unary"),
+                    immediate_size: 0,
+                    bind_group_layouts: &[
+                        Some(param_layout),
+                        Some(&self.tensor_input_layout),
+                        Some(&self.tensor_output_layout)
+                    ]
+                }
+            );
+
+            self.device.create_compute_pipeline(
+                &ComputePipelineDescriptor {
+                    label: Some("Unary"),
+                    compilation_options: Default::default(),
+                    cache: None,
+                    layout: Some(&layout),
+                    entry_point: Some("unary"),
+                    module: &module
+                }
+            )
+        })
     }
 }

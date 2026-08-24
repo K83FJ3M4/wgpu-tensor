@@ -2,7 +2,7 @@ use std::iter::repeat;
 
 use wgpu::{Backends, DeviceDescriptor, ExperimentalFeatures, Instance, InstanceDescriptor, InstanceFlags, MemoryHints, PollType, PowerPreference, RequestAdapterOptions, Trace};
 use pollster::FutureExt;
-use wgpu_tensor::{ALL_FEATURES, BASELINE_DOWNLEVEL_FLAGS, BASELINE_FEATURES, BASELINE_LIMITS, PrintTensorReader, Tensor, TensorContext, TensorError};
+use wgpu_tensor::{OPTIONAL_FEATURES, REQUIRED_DOWNLEVEL_FLAGS, REQUIRED_LIMITS, PrintTensorReader, Tensor, TensorContext, TensorError};
 
 fn main() {
     let instance = Instance::new(InstanceDescriptor {
@@ -20,16 +20,13 @@ fn main() {
         force_fallback_adapter: false
     }).block_on().expect("Failed to find an appropriate adapter");
 
-    let adapter_features = adapter.features();
-    assert!(adapter_features.contains(BASELINE_FEATURES));
-
     let downlevel_flags = adapter.get_downlevel_capabilities().flags;
-    assert!(downlevel_flags.contains(BASELINE_DOWNLEVEL_FLAGS));
+    assert!(downlevel_flags.contains(REQUIRED_DOWNLEVEL_FLAGS));
 
     let (device, queue) = adapter.request_device(&DeviceDescriptor {
         label: None,
-        required_features: BASELINE_FEATURES | (adapter.features() & ALL_FEATURES),
-        required_limits: BASELINE_LIMITS.clone(),
+        required_features: adapter.features() & OPTIONAL_FEATURES,
+        required_limits: REQUIRED_LIMITS.clone(),
         experimental_features: ExperimentalFeatures::disabled(),
         memory_hints: MemoryHints::MemoryUsage,
         trace: Trace::Off

@@ -6,22 +6,18 @@ exclude = ["rust-toolchain.toml"]
 
 [dependencies]
 bytemuck = { version = "1", features = ["derive"] }
-shaders = { version = "0.1.0", path = "shaders" }
 wgpu = { version = "30.0.0", default-features = false, features = ["wgsl"] }
 
 [dev-dependencies]
 wgpu = { version = "30.0.0", default-features = false }
 pollster = "1.0.1"
 
-[workspace]
-resolver = "3"
-members = ["shaders"]
-
 [target.'cfg(target_os = "windows")'.dev-dependencies]
 wgpu = { version = "30.0.0", default-features = false, features = [
     "std",
     "parking_lot",
-    "dx12",
+    "vulkan",
+#   "dx12",
 ] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dev-dependencies]
@@ -44,3 +40,6 @@ wgpu = { version = "30.0.0", default-features = false, features = [
     "parking_lot",
     "webgpu",
 ] }
+
+[build-dependencies]
+wesl = { version = "0.4.3", features = ["naga-ext"] }

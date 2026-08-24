@@ -49,8 +49,8 @@ impl<'scope> TensorEncoder<'scope> {
         } 
 
         let mut tensor = Tensor::create(
-            self.encoder.bind_group_layouts(),
-            self.device, shape, bucket
+            self.encoder.pipelines(),
+            shape, bucket
         );
         tensor.sender = Some(&self.tensors.sender);
         Ok(tensor)
