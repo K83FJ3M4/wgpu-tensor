@@ -337,7 +337,7 @@ impl Pipelines {
                     compilation_options: Default::default(),
                     cache: None,
                     layout: Some(&layout),
-                    entry_point: Some("binary"),
+                    entry_point: Some("main"),
                     module: &module
                 }
             )

@@ -186,7 +186,7 @@ impl Pipelines {
                     compilation_options: Default::default(),
                     cache: None,
                     layout: Some(&layout),
-                    entry_point: Some("reduction"),
+                    entry_point: Some("main"),
                     module: &module
                 }
             )

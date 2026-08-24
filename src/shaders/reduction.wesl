@@ -27,7 +27,7 @@ struct Builtin {
 }
 
 @compute @workgroup_size(256)
-fn reduction(builtin: Builtin) {
+fn main(builtin: Builtin) {
     let invocation = builtin.invocation.x;
     let cluster = clusterIndex(
         invocation,

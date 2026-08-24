@@ -39,7 +39,7 @@ struct Builtin {
 }
 
 @compute @workgroup_size(256)
-fn binary(builtin: Builtin) {
+fn main(builtin: Builtin) {
     var index = invocationIndex(
         builtin.invocation,
         builtin.numWorkgroups

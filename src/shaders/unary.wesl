@@ -27,7 +27,7 @@ struct Builtin {
 }
 
 @compute @workgroup_size(256)
-fn unary(builtin: Builtin) {
+fn main(builtin: Builtin) {
     let index = invocationIndex(
         builtin.invocation,
         builtin.numWorkgroups

@@ -18,4 +18,10 @@ fn main() {
             &"package::reduction".parse().unwrap(),
             "reduction",
         );
+
+    Wesl::new("./src/shaders")
+        .build_artifact(
+            &"package::matmul".parse().unwrap(),
+            "matmul",
+        );
 }
