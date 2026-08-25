@@ -1,4 +1,9 @@
-import package::share::invocation::invocationIndex;
+import package::share::indices::invocationIndex;
+import package::share::broadcast::{
+    BroadcastInfo,
+    tensorIndex,
+    flattenTensorIndex
+};
 
 @group(0) @binding(0)
 var<uniform> params: BinaryParameters;
@@ -9,19 +14,12 @@ var<storage, read> inputB: array<f32>;
 @group(3) @binding(0)
 var<storage, read_write> output: array<f32>;
 
-struct FastDivU32 {
-    divisor: u32,
-    magic: u32,
-    shift: u32,
-    pad: u32
-}
-
 struct BinaryParameters {
-    divisions: array<FastDivU32, 7>,
-    numDimensions: u32,
+    info: BroadcastInfo,
     length: u32,
-    masks: u32,
-    operation: u32
+    operation: u32,
+    pad_0: u32,
+    pad_1: u32
 }
 
 const ADD: u32 = 0;
@@ -48,18 +46,16 @@ fn main(builtin: Builtin) {
 
     if (index >= params.length) { return; }
 
-    let maxDimension = max(params.numDimensions, 1u) - 1u;
-    var tensorIndex: array<u32, 8>;
+    let tensorIndex = tensorIndex(
+        params.info,
+        index,
+    );
 
-    for (var i = 0u; i < maxDimension; i += 1u) {
-        let division = params.divisions[i];
-        let quotient = fastDiv(division, index);
-        tensorIndex[i] = index - quotient * division.divisor;
-        index = quotient;
-    }
+    let indices = flattenTensorIndex(
+        params.info,
+        tensorIndex
+    );
 
-    tensorIndex[maxDimension] = index;
-    let indices = flattenIndex(tensorIndex);
     let lhs = inputA[indices.x];
     let rhs = inputB[indices.y];
 
@@ -74,57 +70,6 @@ fn main(builtin: Builtin) {
         case REMAINDER: { output[outputIndex] = remainder(lhs, rhs); }
         default: { output[outputIndex] = 0.0; }
     }
-}
-
-fn flattenIndex(tensorIndex: array<u32, 8>) -> vec2u {
-    let masks = vec2u(
-        params.masks & 0xffffu,
-        params.masks >> 16u
-    );
-    let maxIndex = max(params.numDimensions, 1u) - 1u;
-    let highestValid = vec2u(
-        (masks.x >> maxIndex) & 1u,
-        (masks.y >> maxIndex) & 1u
-    );
-    var flat = vec2u(tensorIndex[maxIndex]) * highestValid;
-    var i = maxIndex;
-
-    while (i != 0u) {
-        i -= 1u;
-        let valid = vec2u(
-            (masks.x >> i) & 1u,
-            (masks.y >> i) & 1u
-        );
-        let size = vec2u(1u) + valid * vec2u(
-            params.divisions[i].divisor - 1u
-        );
-        let item = vec2u(tensorIndex[i]) * valid;
-        flat = flat * size + item;
-    }
-
-    return flat;
-}
-
-fn fastDiv(division: FastDivU32, numerator: u32) -> u32 {
-    if (division.divisor == 1u) { return numerator; }
-
-    let quotient = mulHiU32(numerator, division.magic);
-    let intermediate = ((numerator - quotient) >> 1u) + quotient;
-    return intermediate >> division.shift;
-}
-
-fn mulHiU32(lhs: u32, rhs: u32) -> u32 {
-    let lhsLow = lhs & 0xffffu;
-    let lhsHigh = lhs >> 16u;
-    let rhsLow = rhs & 0xffffu;
-    let rhsHigh = rhs >> 16u;
-    let lowProduct = lhsLow * rhsLow;
-    let first = lhsHigh * rhsLow + (lowProduct >> 16u);
-    let firstLow = first & 0xffffu;
-    let firstHigh = first >> 16u;
-    let second = lhsLow * rhsHigh + firstLow;
-
-    return lhsHigh * rhsHigh + firstHigh + (second >> 16u);
 }
 
 fn power(lhs: f32, rhs: f32) -> f32 {

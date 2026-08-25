@@ -1,4 +1,4 @@
-import package::share::invocation::invocationIndex;
+import package::share::indices::invocationIndex;
 
 @group(0) @binding(0)
 var<uniform> params: UniformParams;

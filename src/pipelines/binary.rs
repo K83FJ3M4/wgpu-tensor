@@ -7,10 +7,10 @@ use crate::{Shape, Tensor, TensorEncoder, TensorError};
 #[derive(Pod, Zeroable, Clone, Copy)]
 pub struct BinaryParameters {
     pub divisions: [FastDivU32; 7],
-    pub num_dimensions: u32,
     pub length: u32,
-    pub masks: u32,
-    pub operation: BinaryOperation
+    pub operation: BinaryOperation,
+    pub pad0: u32,
+    pub pad1: u32
 }
 
 #[repr(C)]
@@ -19,7 +19,7 @@ pub struct FastDivU32 {
     pub divisor: u32,
     pub magic: u32,
     pub shift: u32,
-    pub pad: u32,
+    pub data: u32,
 }
 
 #[repr(transparent)]
@@ -225,7 +225,7 @@ impl<'scope> TensorEncoder<'scope> {
                 divisor,
                 magic: 0,
                 shift: 0,
-                pad: 0 
+                data: 0
             }
         }
 
@@ -235,7 +235,7 @@ impl<'scope> TensorEncoder<'scope> {
                 divisor: divisor,
                 magic: 0,
                 shift: floor_log2 - 1,
-                pad: 0
+                data: 0
             }
         }
 
@@ -253,7 +253,7 @@ impl<'scope> TensorEncoder<'scope> {
             divisor,
             magic: proposed_m.wrapping_add(1),
             shift: floor_log2,
-            pad: 0
+            data: 0
         }
     }
 
@@ -266,21 +266,24 @@ impl<'scope> TensorEncoder<'scope> {
         if (a == 1) && (b == 1) { return Ok(()) }
 
         let dimension = Self::boradcast_dimension(a, b)?;
-        let index = params.num_dimensions as usize;
+        let index = *params.num_dimensions() as usize;
         if let Some(division) = params.divisions.get_mut(index) {
             if dimension != 0 {
-                *division = Self::create_div(dimension);
+                let target = Self::create_div(dimension);
+                division.divisor = target.divisor;
+                division.magic = target.magic;
+                division.shift = target.shift;
             }
         }
 
         params.length = params.length.checked_mul(dimension)
             .ok_or(TensorError::OversizedDispatch)?;
 
-        let mut masks = unpack_2x_u16(params.masks);
-        masks[0] |= ((a != 1) as u32) << params.num_dimensions;
-        masks[1] |= ((b != 1) as u32) << params.num_dimensions;
-        params.masks = pack_2x_u16(masks);
-        params.num_dimensions += 1;
+        let mut masks = unpack_2x_u16(*params.masks());
+        masks[0] |= ((a != 1) as u32) << *params.num_dimensions();
+        masks[1] |= ((b != 1) as u32) << *params.num_dimensions();
+        *params.masks() = pack_2x_u16(masks);
+        *params.num_dimensions() += 1;
 
         Ok(())
     }
@@ -342,5 +345,15 @@ impl Pipelines {
                 }
             )
         })
+    }
+}
+
+impl BinaryParameters {
+    fn num_dimensions(&mut self) -> &mut u32 {
+        &mut self.divisions[0].data
+    }
+
+    fn masks(&mut self) -> &mut u32 {
+        &mut self.divisions[1].data
     }
 }
