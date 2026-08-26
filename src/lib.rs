@@ -17,6 +17,8 @@ mod tensor;
 mod staging;
 mod pipelines;
 
+pub mod optimizers;
+
 pub struct TensorContext {
     write_pool: StagingAllocatorPool<BufferViewMut>,
     read_pool: StagingAllocatorPool<BufferView>,
@@ -37,7 +39,8 @@ pub enum TensorError {
     OversizedTensor,
     OversizedDispatch,
     IndexOutOfBounds,
-    IncompatibleMatrices
+    IncompatibleMatrices,
+    InvalidLossShape
 }
 
 impl TensorContext {
@@ -55,11 +58,12 @@ impl TensorContext {
         }
     }
 
-    pub fn encode<T>(
+    pub fn infer(
         &mut self,
         encoder: &mut CommandEncoder,
-        callback: impl for<'scope> FnOnce(&mut TensorEncoder<'scope>) -> T
-    ) -> T {
+        callback: impl for<'scope> FnOnce(&mut TensorEncoder<'scope>)
+            -> Result<(), TensorError>
+    ) -> Result<(), TensorError> {
         let read_allocator = StagingAllocator::new(&self.read_pool);
         let write_allocator = StagingAllocator::new(&self.write_pool);
         let encoder = Encoder::new(&mut self.encoder_pool, encoder);
@@ -70,5 +74,31 @@ impl TensorContext {
             write_allocator,
             encoder 
         })
+    }
+
+    pub fn learn(
+        &mut self,
+        encoder: &mut CommandEncoder,
+        callback: impl for<'scope> FnOnce(&mut TensorEncoder<'scope>)
+            -> Result<Tensor<'scope>, TensorError>
+    ) -> Result<(), TensorError> {
+        let read_allocator = StagingAllocator::new(&self.read_pool);
+        let write_allocator = StagingAllocator::new(&self.write_pool);
+        let encoder = Encoder::new(&mut self.encoder_pool, encoder);
+        let mut encoder = TensorEncoder {
+            tensors: &mut self.tensors,
+            read_allocator,
+            write_allocator,
+            encoder 
+        };
+
+        let loss = callback(&mut encoder)?;
+        if loss.shape() != 1u32.shape() {
+            return Err(TensorError::InvalidLossShape)
+        }
+
+        //do the backwrads pass
+
+        Ok(())
     }
 }

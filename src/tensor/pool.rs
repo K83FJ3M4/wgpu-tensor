@@ -1,13 +1,15 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use wgpu::BufferSize;
+use crate::tensor::TensorInner;
 use crate::{IntoShape, Tensor, TensorEncoder, TensorError};
 
 pub(crate) struct TensorPool {
-    sender: Sender<Tensor<'static>>,
-    receiver: Receiver<Tensor<'static>>,
-    tensors: RefCell<HashMap<BufferSize, Vec<Tensor<'static>>>>
+    sender: Sender<TensorInner<'static>>,
+    receiver: Receiver<TensorInner<'static>>,
+    tensors: RefCell<HashMap<BufferSize, Vec<TensorInner<'static>>>>
 }
 
 impl TensorPool {
@@ -44,15 +46,16 @@ impl<'scope> TensorEncoder<'scope> {
                 .map(Vec::pop).flatten() {
                 tensor.sender = Some(&self.tensors.sender);
                 tensor.shape = shape;
-                return Ok(tensor); 
+                return Ok(super::Tensor(Arc::new(tensor))); 
             }
         } 
 
         let mut tensor = Tensor::create(
             self.encoder.pipelines(),
-            shape, bucket
+            shape, bucket,
+            None
         );
         tensor.sender = Some(&self.tensors.sender);
-        Ok(tensor)
+        Ok(super::Tensor(Arc::new(tensor)))
     }
 }

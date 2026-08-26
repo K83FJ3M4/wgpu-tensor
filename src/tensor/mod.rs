@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 
 use bytemuck::Contiguous;
@@ -6,6 +7,7 @@ pub use shape::{Shape, IntoShape};
 pub use indices::IntoIndices;
 pub(super) use pool::TensorPool;
 
+use crate::optimizers::{Optimizer, OptimizerConfig};
 use crate::pipelines::Pipelines;
 use crate::{TensorContext, TensorError};
 
@@ -13,8 +15,12 @@ mod indices;
 mod shape;
 mod pool;
 
-pub struct Tensor<'scope> {
-    sender: Option<&'scope Sender<Tensor<'static>>>,
+#[derive(Clone)]
+pub struct Tensor<'scope>(Arc<TensorInner<'scope>>);
+
+struct TensorInner<'scope> {
+    sender: Option<&'scope Sender<TensorInner<'static>>>,
+    optimizer: Option<Box<Mutex<dyn Optimizer>>>,
     read_bind_group: BindGroup,
     write_bind_group: BindGroup,
     buffer: Buffer,
@@ -27,10 +33,25 @@ impl Tensor<'static> {
         shape: impl IntoShape
     ) -> Result<Tensor<'static>, TensorError> {
         let shape = shape.shape();
-        Ok(Self::create(
+        Ok(Tensor(Arc::new(Self::create(
             &mut context.encoder_pool.pipelines(),
-            shape, Self::buffer_size(shape)?
-        ))
+            shape, Self::buffer_size(shape)?,
+            None
+        ))))
+    }
+
+    pub fn new_trainable(
+        context: &mut TensorContext,
+        config: impl OptimizerConfig,
+        shape: impl IntoShape,
+    ) -> Result<Tensor<'static>, TensorError> {
+        let optimizer = config.build(context);
+        let shape = shape.shape();
+        Ok(Tensor(Arc::new(Self::create(
+            &mut context.encoder_pool.pipelines(),
+            shape, Self::buffer_size(shape)?,
+            Some(Box::new(Mutex::new(optimizer)))
+        ))))
     }
 }
 
@@ -39,18 +60,19 @@ impl<'scope> Tensor<'scope> {
     const BUCKETS_PER_OCTAVE: BufferAddress = 4;
 
     pub(crate) fn data_buffer(&self) -> &Buffer {
-        &self.buffer
+        &self.0.buffer
     }
 
     pub fn shape(&self) -> Shape {
-        self.shape
+        self.0.shape
     }
     
     fn create(
         pipelines: &mut Pipelines,
         shape: Shape,
         size: BufferSize,
-    ) -> Tensor<'static> {
+        optimizer: Option<Box<Mutex<dyn Optimizer>>>
+    ) -> TensorInner<'static> {
         let buffer = pipelines.device.create_buffer(
             &BufferDescriptor {
                 label: None,
@@ -74,10 +96,11 @@ impl<'scope> Tensor<'scope> {
             &buffer
         );
 
-        Tensor {
+        TensorInner {
             sender: None,
             read_bind_group,
             write_bind_group,
+            optimizer,
             buffer,
             shape,
         }
@@ -92,13 +115,13 @@ impl<'scope> Tensor<'scope> {
         if read_only {
             compute_pass.set_bind_group(
                 index,
-                &self.read_bind_group,
+                &self.0.read_bind_group,
                 &[]
             );
         } else {
             compute_pass.set_bind_group(
                 index,
-                &self.write_bind_group,
+                &self.0.write_bind_group,
                 &[]
             );
         }
@@ -151,12 +174,13 @@ impl<'scope> Tensor<'scope> {
     }
 }
 
-impl<'scope> Drop for Tensor<'scope> {
+impl<'scope> Drop for TensorInner<'scope> {
     fn drop(&mut self) {
         if let Some(sender) = self.sender.take() {
-            sender.send(Tensor {
+            sender.send(TensorInner {
                 write_bind_group: self.write_bind_group.clone(),
                 read_bind_group: self.read_bind_group.clone(),
+                optimizer: self.optimizer.take(),
                 buffer: self.buffer.clone(),
                 shape: self.shape.clone(),
                 sender: None
