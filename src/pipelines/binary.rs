@@ -1,3 +1,6 @@
+use std::cell::OnceCell;
+use std::rc::Rc;
+
 use bytemuck::{Pod, Zeroable};
 use wgpu::{ComputePipeline, ComputePipelineDescriptor, PipelineLayoutDescriptor, include_wgsl};
 use crate::optimizers::{AutogradEncoder};
@@ -56,86 +59,248 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn subtract(
         &mut self,
-        operand_one: &Tensor<'scope>,
-        operand_two: &Tensor<'scope>
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.binary(
+        let res = self.binary(
             BinaryOperation::SUBTRACT,
-            operand_one,
-            operand_two,
-        )
+            lhs,
+            rhs,
+        )?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            autograd.backwards_binary(
+                lhs, rhs, &res,
+                |_, output| Ok(output.clone()),
+                |encoder, output| encoder.negate(output)
+            );
+        }
+
+        Ok(res)
     }
 
     pub fn multiply(
         &mut self,
-        operand_one: &Tensor<'scope>,
-        operand_two: &Tensor<'scope>
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.binary(
+        let res = self.binary(
             BinaryOperation::MULTIPLY,
-            operand_one,
-            operand_two,
-        )
+            lhs,
+            rhs
+        )?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            let lhs_clone = lhs.clone();
+            let rhs_clone = rhs.clone();
+            autograd.backwards_binary(
+                &lhs, &rhs, &res,
+                move |encoder, output| {
+                    encoder.multiply(output, &rhs_clone)
+                },
+                move |encoder, output| {
+                    encoder.multiply(output, &lhs_clone)
+                }
+            );
+        }
+
+        Ok(res)
     }
 
     pub fn divide(
         &mut self,
-        operand_one: &Tensor<'scope>,
-        operand_two: &Tensor<'scope>
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.binary(
+
+        let res = self.binary(
             BinaryOperation::DIVIDE,
-            operand_one,
-            operand_two,
-        )
+            lhs,
+            rhs
+        )?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            let lhs_clone = lhs.clone();
+            let rhs_clone = rhs.clone();
+
+            let cell = Rc::new(OnceCell::new());
+            let cell_clone = cell.clone();
+            let lhs_grad = move |
+                encoder: &mut TensorEncoder<'scope>,
+                output: &Tensor<'scope>| {
+                cell_clone.get_or_init(|| {
+                    encoder.divide(output, &rhs_clone)
+                }).clone()
+            };
+
+            let rhs_clone = rhs.clone();
+            let rhs_grad = move |
+                encoder: &mut TensorEncoder<'scope>,
+                output: &Tensor<'scope>| {
+                let q = cell.get_or_init(|| {
+                    encoder.divide(output, &rhs_clone)
+                }).clone()?;
+                let drhs = encoder.divide(&lhs_clone, &rhs_clone)?;
+                let drhs = encoder.multiply(&q, &drhs)?;
+                encoder.negate(&drhs)
+            };
+
+            autograd.backwards_binary(
+                &lhs, &rhs, &res,
+                lhs_grad,
+                rhs_grad 
+            );
+        }
+
+        Ok(res)
     }
 
     pub fn power(
         &mut self,
-        operand_one: &Tensor<'scope>,
-        operand_two: &Tensor<'scope>
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.binary(
+        let res = self.binary(
             BinaryOperation::POWER,
-            operand_one,
-            operand_two,
-        )
+            lhs,
+            rhs,
+        )?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            let lhs_clone = lhs.clone();
+            let rhs_clone = rhs.clone();
+            let lhs_grad = move |
+                encoder: &mut TensorEncoder<'scope>,
+                output: &Tensor<'scope>| {
+                let one = encoder.ones(1)?;
+                let exponent = encoder.subtract(&rhs_clone, &one)?;
+                let power = encoder.power(&lhs_clone, &exponent)?;
+                let derivative = encoder.multiply(&rhs_clone, &power)?;
+                encoder.multiply(output, &derivative)
+            };
+
+            let lhs_clone = lhs.clone();
+            let res_clone = res.clone();
+            let rhs_grad = move |
+                encoder: &mut TensorEncoder<'scope>,
+                output: &Tensor<'scope>| {
+                let logarithm = encoder.logarithm(&lhs_clone)?;
+                let derivative = encoder.multiply(&res_clone, &logarithm)?;
+                encoder.multiply(output, &derivative)
+            };
+
+            autograd.backwards_binary(
+                lhs, rhs, &res,
+                lhs_grad,
+                rhs_grad
+            );
+        }
+
+        Ok(res)
     }
 
     pub fn minimum(
         &mut self,
-        operand_one: &Tensor<'scope>,
-        operand_two: &Tensor<'scope>
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.binary(
+        self.extremum(
             BinaryOperation::MINIMUM,
-            operand_one,
-            operand_two,
+            lhs,
+            rhs,
         )
     }
 
     pub fn maximum(
         &mut self,
-        operand_one: &Tensor<'scope>,
-        operand_two: &Tensor<'scope>
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.binary(
+        self.extremum(
             BinaryOperation::MAXIMUM,
-            operand_one,
-            operand_two,
+            lhs,
+            rhs,
         )
     }
 
     pub fn remainder(
         &mut self,
-        operand_one: &Tensor<'scope>,
-        operand_two: &Tensor<'scope>
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.binary(
+        let res = self.binary(
             BinaryOperation::REMAINDER,
-            operand_one,
-            operand_two,
-        )
+            lhs,
+            rhs,
+        )?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            let lhs_clone = lhs.clone();
+            let rhs_clone = rhs.clone();
+            let res_clone = res.clone();
+            autograd.backwards_binary(
+                lhs, rhs, &res,
+                |_, output| Ok(output.clone()),
+                move |encoder, output| {
+                    let difference = encoder.subtract(&lhs_clone, &res_clone)?;
+                    let quotient = encoder.divide(&difference, &rhs_clone)?;
+                    let gradient = encoder.multiply(output, &quotient)?;
+                    encoder.negate(&gradient)
+                }
+            );
+        }
+
+        Ok(res)
+    }
+
+    fn extremum(
+        &mut self,
+        operation: BinaryOperation,
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>,
+    ) -> Result<Tensor<'scope>, TensorError> {
+        let res = self.binary(operation, lhs, rhs)?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            let lhs_clone = lhs.clone();
+            let rhs_clone = rhs.clone();
+            let res_clone = res.clone();
+
+            let cell = Rc::new(OnceCell::new());
+            let cell_clone = cell.clone();
+            let lhs_grad = move |
+                encoder: &mut TensorEncoder<'scope>,
+                output: &Tensor<'scope>| {
+                let scaled = cell_clone.get_or_init(|| {
+                    let difference = encoder.subtract(&lhs_clone, &rhs_clone)?;
+                    encoder.divide(output, &difference)
+                }).clone()?;
+                let numerator = encoder.subtract(&res_clone, &rhs_clone)?;
+                encoder.multiply(&scaled, &numerator)
+            };
+
+            let lhs_clone = lhs.clone();
+            let rhs_clone = rhs.clone();
+            let res_clone = res.clone();
+            let rhs_grad = move |
+                encoder: &mut TensorEncoder<'scope>,
+                output: &Tensor<'scope>| {
+                let scaled = cell.get_or_init(|| {
+                    let difference = encoder.subtract(&lhs_clone, &rhs_clone)?;
+                    encoder.divide(output, &difference)
+                }).clone()?;
+                let numerator = encoder.subtract(&lhs_clone, &res_clone)?;
+                encoder.multiply(&scaled, &numerator)
+            };
+
+            autograd.backwards_binary(
+                lhs, rhs, &res,
+                lhs_grad,
+                rhs_grad
+            );
+        }
+
+        Ok(res)
     }
 
     fn binary(
@@ -205,6 +370,10 @@ impl<'scope> AutogradEncoder<'scope> {
     ) {
         let lhs_required = self.require([res], lhs);
         let rhs_required = self.require([res], rhs);
+        
+        let lhs_gradient = lhs_required.then_some(lhs_gradient);
+        let rhs_gradient = rhs_required.then_some(rhs_gradient);
+
         let lhs_shape = lhs.shape();
         let rhs_shape = rhs.shape();
         let res_shape = res.shape();
@@ -220,14 +389,14 @@ impl<'scope> AutogradEncoder<'scope> {
                     None => return Ok(())
                 };
 
-                if lhs_required {
+                if let Some(lhs_gradient) = lhs_gradient {
                     let gradient = lhs_gradient(encoder, &output)?;
                     let diff = ShapeDiff::new(lhs_shape, res_shape);
                     let gradient = encoder.sum(&gradient, diff)?;
                     gradients.insert(encoder, lhs_weak, gradient)?;
                 }
 
-                if rhs_required {
+                if let Some(rhs_gradient) = rhs_gradient {
                     let gradient = rhs_gradient(encoder, &output)?;
                     let diff = ShapeDiff::new(rhs_shape, res_shape);
                     let gradient = encoder.sum(&gradient, diff)?;
