@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex, Weak};
 use std::sync::mpsc::Sender;
 
 use bytemuck::Contiguous;
@@ -6,10 +7,11 @@ use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buff
 pub use shape::{Shape, IntoShape};
 pub use indices::IntoIndices;
 pub(super) use pool::TensorPool;
+pub(super) use indices::ShapeDiff;
 
 use crate::optimizers::{Optimizer, OptimizerConfig};
 use crate::pipelines::Pipelines;
-use crate::{TensorContext, TensorError};
+use crate::{TensorContext, TensorEncoder, TensorError};
 
 mod indices;
 mod shape;
@@ -18,13 +20,21 @@ mod pool;
 #[derive(Clone)]
 pub struct Tensor<'scope>(Arc<TensorInner<'scope>>);
 
+#[derive(Clone)]
+pub(crate) struct WeakTensor<'scope>(Weak<TensorInner<'scope>>);
+
 struct TensorInner<'scope> {
-    sender: Option<&'scope Sender<TensorInner<'static>>>,
-    optimizer: Option<Box<Mutex<dyn Optimizer>>>,
+    domain: TensorDomain<'scope>,
     read_bind_group: BindGroup,
     write_bind_group: BindGroup,
     buffer: Buffer,
-    shape: Shape,
+    shape: Arc<Shape>,
+}
+
+enum TensorDomain<'scope> {
+    Trainable(Box<Mutex<dyn Optimizer>>),
+    Temporary(&'scope Sender<TensorInner<'static>>),
+    Generic
 }
 
 impl Tensor<'static> {
@@ -36,7 +46,7 @@ impl Tensor<'static> {
         Ok(Tensor(Arc::new(Self::create(
             &mut context.encoder_pool.pipelines(),
             shape, Self::buffer_size(shape)?,
-            None
+            TensorDomain::Generic
         ))))
     }
 
@@ -50,29 +60,58 @@ impl Tensor<'static> {
         Ok(Tensor(Arc::new(Self::create(
             &mut context.encoder_pool.pipelines(),
             shape, Self::buffer_size(shape)?,
-            Some(Box::new(Mutex::new(optimizer)))
+            TensorDomain::Trainable(
+                Box::new(Mutex::new(optimizer))
+            )
         ))))
-    }
+    } 
 }
 
 impl<'scope> Tensor<'scope> {
     const MIN_TEMPORARY_CAPACITY: BufferAddress = 256;
     const BUCKETS_PER_OCTAVE: BufferAddress = 4;
 
+    pub(crate) fn optimize(
+        self,
+        encoder: &mut TensorEncoder<'scope>,
+        gradients: &Tensor<'scope>
+    ) -> Result<(), TensorError> {
+        let TensorDomain::Trainable(optimizer) = &self.0.domain else {
+            panic!("Attempted to optimize a non trainable tensor")
+        };
+
+        let Ok(mut optimizer) = optimizer.lock() else {
+            panic!("Failed to acuqire optimizer lock")
+        };
+
+        optimizer.optimize(encoder, gradients, &self)
+    }
+
+    pub(crate) fn downgrade(&self) -> WeakTensor<'scope> {
+        WeakTensor(Arc::downgrade(&self.0))
+    }
+
     pub(crate) fn data_buffer(&self) -> &Buffer {
         &self.0.buffer
     }
 
+    pub fn trainable(&self) -> bool {
+        match self.0.domain {
+            TensorDomain::Trainable(..) => true,
+            _ => false
+        }
+    }
+
     pub fn shape(&self) -> Shape {
-        self.0.shape
+        *self.0.shape
     }
     
     fn create(
         pipelines: &mut Pipelines,
         shape: Shape,
         size: BufferSize,
-        optimizer: Option<Box<Mutex<dyn Optimizer>>>
-    ) -> TensorInner<'static> {
+        domain: TensorDomain<'scope>
+    ) -> TensorInner<'scope> {
         let buffer = pipelines.device.create_buffer(
             &BufferDescriptor {
                 label: None,
@@ -97,12 +136,11 @@ impl<'scope> Tensor<'scope> {
         );
 
         TensorInner {
-            sender: None,
             read_bind_group,
             write_bind_group,
-            optimizer,
+            shape: Arc::new(shape),
+            domain,
             buffer,
-            shape,
         }
     }  
 
@@ -176,15 +214,40 @@ impl<'scope> Tensor<'scope> {
 
 impl<'scope> Drop for TensorInner<'scope> {
     fn drop(&mut self) {
-        if let Some(sender) = self.sender.take() {
+        if let TensorDomain::Temporary(sender) = self.domain {
             sender.send(TensorInner {
                 write_bind_group: self.write_bind_group.clone(),
                 read_bind_group: self.read_bind_group.clone(),
-                optimizer: self.optimizer.take(),
                 buffer: self.buffer.clone(),
                 shape: self.shape.clone(),
-                sender: None
+                domain: TensorDomain::Generic
             }).ok();
         }
+    }
+}
+
+impl<'scope> Eq for WeakTensor<'scope> {}
+impl<'scope> PartialEq for WeakTensor<'scope> {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.0, &other.0) 
+    }
+}
+
+impl<'scope> Hash for WeakTensor<'scope> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Weak::as_ptr(&self.0).hash(state);
+    }
+}
+
+impl<'scope> Eq for Tensor<'scope> {}
+impl<'scope> PartialEq for Tensor<'scope> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) 
+    }
+}
+
+impl<'scope> Hash for Tensor<'scope> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.0).hash(state);
     }
 }

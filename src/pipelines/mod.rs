@@ -9,6 +9,7 @@ mod reduction;
 mod binary;
 mod matmul;
 mod unary;
+mod constant;
 
 pub(crate) struct Pipelines {
     pub(crate) device: Device,
@@ -17,9 +18,10 @@ pub(crate) struct Pipelines {
     pub(crate) param_layouts: ParamLayouts,
 
     reduction: Option<ComputePipeline>,
+    constant: Option<ComputePipeline>,
     binary: Option<ComputePipeline>,
     matmul: Option<ComputePipeline>,
-    unary: Option<ComputePipeline>
+    unary: Option<ComputePipeline>,
 }
 
 pub(crate) struct ParamLayouts {
@@ -86,7 +88,8 @@ impl Pipelines {
             tensor_output_layout,
             device,
 
-            reduction: None, 
+            reduction: None,
+            constant: None,
             binary: None,
             matmul: None,
             unary: None

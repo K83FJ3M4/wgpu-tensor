@@ -29,7 +29,7 @@ impl UnaryOperation {
 impl<'scope> TensorEncoder<'scope> {
     pub fn negate(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
     ) -> Result<Tensor<'scope>, TensorError> {
         self.unary(
             UnaryOperation::NEGATE,
@@ -39,7 +39,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn absolute(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
     ) -> Result<Tensor<'scope>, TensorError> {
         self.unary(
             UnaryOperation::ABSOLUTE,
@@ -49,7 +49,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn reciprocal(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
     ) -> Result<Tensor<'scope>, TensorError> {
         self.unary(
             UnaryOperation::RECIPROCAL,
@@ -59,7 +59,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn square_root(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
     ) -> Result<Tensor<'scope>, TensorError> {
         self.unary(
             UnaryOperation::SQUARE_ROOT,
@@ -69,7 +69,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn reciprocal_square_root(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
     ) -> Result<Tensor<'scope>, TensorError> {
         self.unary(
             UnaryOperation::RECIPROCAL_SQUARE_ROOT,
@@ -79,7 +79,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn exponential(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
     ) -> Result<Tensor<'scope>, TensorError> {
         self.unary(
             UnaryOperation::EXPONENTIAL,
@@ -89,7 +89,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn logarithm(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
     ) -> Result<Tensor<'scope>, TensorError> {
         self.unary(
             UnaryOperation::LOGARITHM,
@@ -99,7 +99,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn copy(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
     ) -> Result<Tensor<'scope>, TensorError> {
         self.unary(
             UnaryOperation::COPY,
@@ -110,7 +110,7 @@ impl<'scope> TensorEncoder<'scope> {
     fn unary(
         &mut self,
         operation: UnaryOperation,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
     ) -> Result<Tensor<'scope>, TensorError> {
 
         let mut params = UnaryParameters {

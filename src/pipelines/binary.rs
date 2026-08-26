@@ -1,6 +1,8 @@
 use bytemuck::{Pod, Zeroable};
 use wgpu::{ComputePipeline, ComputePipelineDescriptor, PipelineLayoutDescriptor, include_wgsl};
+use crate::optimizers::{AutogradEncoder};
 use crate::pipelines::{BroadcastInfo, Pipelines};
+use crate::tensor::ShapeDiff;
 use crate::{Tensor, TensorEncoder, TensorError};
 
 #[repr(C)]
@@ -32,20 +34,30 @@ impl BinaryOperation {
 impl<'scope> TensorEncoder<'scope> {
     pub fn add(
         &mut self,
-        operand_one: &Tensor,
-        operand_two: &Tensor
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.binary(
+        let res = self.binary(
             BinaryOperation::ADD,
-            operand_one,
-            operand_two,
-        )
+            lhs,
+            rhs,
+        )?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            autograd.backwards_binary(
+                lhs, rhs, &res,
+                |_, output| Ok(output.clone()),
+                |_, output| Ok(output.clone())
+            ); 
+        }
+
+        Ok(res)
     }
 
     pub fn subtract(
         &mut self,
-        operand_one: &Tensor,
-        operand_two: &Tensor
+        operand_one: &Tensor<'scope>,
+        operand_two: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
         self.binary(
             BinaryOperation::SUBTRACT,
@@ -56,8 +68,8 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn multiply(
         &mut self,
-        operand_one: &Tensor,
-        operand_two: &Tensor
+        operand_one: &Tensor<'scope>,
+        operand_two: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
         self.binary(
             BinaryOperation::MULTIPLY,
@@ -68,8 +80,8 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn divide(
         &mut self,
-        operand_one: &Tensor,
-        operand_two: &Tensor
+        operand_one: &Tensor<'scope>,
+        operand_two: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
         self.binary(
             BinaryOperation::DIVIDE,
@@ -80,8 +92,8 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn power(
         &mut self,
-        operand_one: &Tensor,
-        operand_two: &Tensor
+        operand_one: &Tensor<'scope>,
+        operand_two: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
         self.binary(
             BinaryOperation::POWER,
@@ -92,8 +104,8 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn minimum(
         &mut self,
-        operand_one: &Tensor,
-        operand_two: &Tensor
+        operand_one: &Tensor<'scope>,
+        operand_two: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
         self.binary(
             BinaryOperation::MINIMUM,
@@ -104,8 +116,8 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn maximum(
         &mut self,
-        operand_one: &Tensor,
-        operand_two: &Tensor
+        operand_one: &Tensor<'scope>,
+        operand_two: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
         self.binary(
             BinaryOperation::MAXIMUM,
@@ -116,8 +128,8 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn remainder(
         &mut self,
-        operand_one: &Tensor,
-        operand_two: &Tensor
+        operand_one: &Tensor<'scope>,
+        operand_two: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
         self.binary(
             BinaryOperation::REMAINDER,
@@ -129,8 +141,8 @@ impl<'scope> TensorEncoder<'scope> {
     fn binary(
         &mut self,
         operation: BinaryOperation,
-        operand_one: &Tensor,
-        operand_two: &Tensor,
+        operand_one: &Tensor<'scope>,
+        operand_two: &Tensor<'scope>,
     ) -> Result<Tensor<'scope>, TensorError> {
 
         let mut shape = operand_one.shape();
@@ -173,6 +185,58 @@ impl<'scope> TensorEncoder<'scope> {
         }
 
         Ok(output)
+    }
+}
+
+impl<'scope> AutogradEncoder<'scope> {
+    fn backwards_binary(
+        &mut self,
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>,
+        res: &Tensor<'scope>,
+        lhs_gradient: impl FnOnce(
+            &mut TensorEncoder<'scope>,
+            &Tensor<'scope>,
+        ) -> Result<Tensor<'scope>, TensorError> + 'scope,
+        rhs_gradient: impl FnOnce(
+            &mut TensorEncoder<'scope>,
+            &Tensor<'scope>,
+        ) -> Result<Tensor<'scope>, TensorError> + 'scope,
+    ) {
+        let lhs_required = self.require([res], lhs);
+        let rhs_required = self.require([res], rhs);
+        let lhs_shape = lhs.shape();
+        let rhs_shape = rhs.shape();
+        let res_shape = res.shape();
+
+        if lhs_required || rhs_required {
+            let res_weak = res.downgrade();
+            let lhs_weak = lhs.downgrade();
+            let rhs_weak = rhs.downgrade();
+
+            self.backwards(move |encoder, gradients| {
+                let output = match gradients.remove(res_weak) {
+                    Some(output) => output,
+                    None => return Ok(())
+                };
+
+                if lhs_required {
+                    let gradient = lhs_gradient(encoder, &output)?;
+                    let diff = ShapeDiff::new(lhs_shape, res_shape);
+                    let gradient = encoder.sum(&gradient, diff)?;
+                    gradients.insert(encoder, lhs_weak, gradient)?;
+                }
+
+                if rhs_required {
+                    let gradient = rhs_gradient(encoder, &output)?;
+                    let diff = ShapeDiff::new(rhs_shape, res_shape);
+                    let gradient = encoder.sum(&gradient, diff)?;
+                    gradients.insert(encoder, rhs_weak, gradient)?;
+                }
+                
+                Ok(())
+            });
+        } 
     }
 }
 

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use wgpu::BufferSize;
-use crate::tensor::TensorInner;
+use crate::tensor::{TensorDomain, TensorInner};
 use crate::{IntoShape, Tensor, TensorEncoder, TensorError};
 
 pub(crate) struct TensorPool {
@@ -44,18 +44,17 @@ impl<'scope> TensorEncoder<'scope> {
         if let Ok(mut tensors) = self.tensors.tensors.try_borrow_mut() {
             if let Some(mut tensor) = tensors.get_mut(&bucket)
                 .map(Vec::pop).flatten() {
-                tensor.sender = Some(&self.tensors.sender);
-                tensor.shape = shape;
+                tensor.domain = TensorDomain::Temporary(&self.tensors.sender);
+                tensor.shape = Arc::new(shape);
                 return Ok(super::Tensor(Arc::new(tensor))); 
             }
         } 
 
-        let mut tensor = Tensor::create(
+        let tensor = Tensor::create(
             self.encoder.pipelines(),
             shape, bucket,
-            None
+            TensorDomain::Temporary(&self.tensors.sender)
         );
-        tensor.sender = Some(&self.tensors.sender);
         Ok(super::Tensor(Arc::new(tensor)))
     }
 }

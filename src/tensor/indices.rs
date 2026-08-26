@@ -1,5 +1,33 @@
+use crate::Shape;
+
 pub trait IntoIndices {
     fn indices(self) -> impl Iterator<Item = usize>;
+}
+
+pub(crate) struct ShapeDiff {
+    lhs: Shape,
+    rhs: Shape
+}
+
+impl ShapeDiff {
+    pub(crate) fn new(lhs: Shape, rhs: Shape) -> ShapeDiff {
+        ShapeDiff { lhs, rhs }
+    }
+}
+
+impl IntoIndices for ShapeDiff {
+    fn indices(self) -> impl Iterator<Item = usize> {
+        self.lhs.into_iter()
+        .zip(self.rhs)
+        .enumerate()
+        .filter_map(|(i, (lhs, rhs))| {
+            if lhs != rhs {
+                Some(i)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 impl IntoIndices for usize {

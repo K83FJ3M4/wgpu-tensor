@@ -24,4 +24,10 @@ fn main() {
             &"package::matmul".parse().unwrap(),
             "matmul",
         );
+
+    Wesl::new("./src/shaders")
+        .build_artifact(
+            &"package::constant".parse().unwrap(),
+            "constant",
+        );
 }

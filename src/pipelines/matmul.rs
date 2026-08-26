@@ -15,8 +15,8 @@ struct MatmulParameters {
 impl<'scope> TensorEncoder<'scope> {
     pub fn matmul(
         &mut self,
-        lhs: &Tensor,
-        rhs: &Tensor
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
         let lhs_shape = lhs.shape();
         let rhs_shape = rhs.shape();

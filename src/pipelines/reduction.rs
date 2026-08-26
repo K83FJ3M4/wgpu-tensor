@@ -29,7 +29,7 @@ impl ReductionOperation {
 impl<'scope> TensorEncoder<'scope> {
     pub fn sum(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
         dimensions: impl IntoIndices
     ) -> Result<Tensor<'scope>, TensorError> {
         self.reduction(
@@ -41,7 +41,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn prod(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
         dimensions: impl IntoIndices
     ) -> Result<Tensor<'scope>, TensorError> {
         self.reduction(
@@ -53,7 +53,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn min(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
         dimensions: impl IntoIndices
     ) -> Result<Tensor<'scope>, TensorError> {
         self.reduction(
@@ -65,7 +65,7 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn max(
         &mut self,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
         dimensions: impl IntoIndices
     ) -> Result<Tensor<'scope>, TensorError> {
         self.reduction(
@@ -78,7 +78,7 @@ impl<'scope> TensorEncoder<'scope> {
     fn reduction(
         &mut self,
         operation: ReductionOperation,
-        operand: &Tensor,
+        operand: &Tensor<'scope>,
         dimensions: impl IntoIndices
     ) -> Result<Tensor<'scope>, TensorError> {
 

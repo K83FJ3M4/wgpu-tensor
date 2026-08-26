@@ -1,8 +1,11 @@
 
+use std::collections::{HashMap, HashSet};
+
 pub use tensor::{Tensor, IntoShape, IntoIndices, Shape};
 pub use staging::{TensorReader, TensorWriter, PrintTensorReader};
 use wgpu::{BufferView, BufferViewMut, CommandEncoder, Device, DownlevelFlags, Features, Limits};
 
+use crate::optimizers::AutogradEncoder;
 use crate::staging::{Encoder, EncoderPool, StagingAllocator, StagingAllocatorPool};
 use crate::tensor::TensorPool;
 
@@ -29,6 +32,7 @@ pub struct TensorContext {
 pub struct TensorEncoder<'scope> {
     read_allocator: StagingAllocator<'scope, BufferView>,
     write_allocator: StagingAllocator<'scope, BufferViewMut>,
+    autograd: Option<AutogradEncoder<'scope>>,
     tensors: &'scope TensorPool,
     encoder: Encoder<'scope>
 }
@@ -70,6 +74,7 @@ impl TensorContext {
 
         callback(&mut TensorEncoder {
             tensors: &mut self.tensors,
+            autograd: None,
             read_allocator,
             write_allocator,
             encoder 
@@ -85,20 +90,17 @@ impl TensorContext {
         let read_allocator = StagingAllocator::new(&self.read_pool);
         let write_allocator = StagingAllocator::new(&self.write_pool);
         let encoder = Encoder::new(&mut self.encoder_pool, encoder);
+        let autograd = AutogradEncoder::new();
         let mut encoder = TensorEncoder {
             tensors: &mut self.tensors,
+            autograd: Some(autograd),
             read_allocator,
             write_allocator,
             encoder 
         };
 
         let loss = callback(&mut encoder)?;
-        if loss.shape() != 1u32.shape() {
-            return Err(TensorError::InvalidLossShape)
-        }
-
-        //do the backwrads pass
-
-        Ok(())
+        let autograd = encoder.autograd.take().unwrap();
+        autograd.encode(&mut encoder, loss)
     }
 }
