@@ -44,6 +44,20 @@ pub enum TensorError {
     IncompatibleMatrices,
     InvalidLossShape,
     InvalidRange,
+    TrainableWriteDuringLearning,
+}
+
+impl<'scope> TensorEncoder<'scope> {
+    pub(crate) fn validate_write(
+        &self,
+        tensor: &Tensor<'static>,
+    ) -> Result<(), TensorError> {
+        if self.autograd.is_some() && tensor.trainable() {
+            Err(TensorError::TrainableWriteDuringLearning)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl TensorContext {

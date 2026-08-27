@@ -236,7 +236,9 @@ impl<'scope> TensorEncoder<'scope> {
                 .zip(output_shape.iter())
                 .position(|(input, output)| input != output)
             else {
-                return self.copy(input)
+                let output = self.temp(input.shape())?;
+                self.copy_inner(input, &output)?;
+                return Ok(output)
             };
 
             let mut params = ReductionParameters::zeroed();

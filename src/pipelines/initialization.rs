@@ -65,6 +65,8 @@ impl<'scope> TensorEncoder<'scope> {
         seed: u64,
         stream: u32,
     ) -> Result<(), TensorError> {
+        self.validate_write(output)?;
+
         if !lower.is_finite() || !upper.is_finite() || lower > upper {
             return Err(TensorError::InvalidRange)
         }

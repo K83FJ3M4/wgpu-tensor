@@ -199,22 +199,54 @@ impl<'scope> TensorEncoder<'scope> {
 
     pub fn copy(
         &mut self,
-        operand: &Tensor<'scope>,
-    ) -> Result<Tensor<'scope>, TensorError> {
-        let res = self.unary(
-            UnaryOperation::COPY,
-            operand,
-        )?;
+        src: &Tensor<'scope>,
+        dst: &Tensor<'static>
+    ) -> Result<(), TensorError> {
+        self.validate_write(dst)?;
+        self.copy_inner(src, dst)
+    }
 
-        if let Some(autograd) = self.autograd.as_mut() {
-            autograd.backwards_unary(
-                operand,
-                &res,
-                |_, output_grad| Ok(output_grad.clone())
-            );
+    pub(crate) fn copy_inner(
+        &mut self,
+        src: &Tensor<'scope>,
+        dst: &Tensor<'scope>,
+    ) -> Result<(), TensorError> {
+        let mut params = UnaryParameters {
+            operation: UnaryOperation::COPY,
+            length: 1,
+        };
+
+        if src.shape() != dst.shape() {
+            return Err(TensorError::ShapeMismatch);
         }
 
-        Ok(res)
+        let mut zero = false;
+        for dimension in src.shape() {
+            params.length = params.length.checked_mul(dimension)
+                .ok_or(TensorError::OversizedTensor)?;
+            zero |= dimension == 0;
+        }
+        if zero { return Ok(()) }
+
+        let compute_pass = self.encoder.compute(
+            Pipelines::unary,
+            &params
+        );
+
+        src.bind(compute_pass, 1, true);
+        dst.bind(compute_pass, 2, false);
+        let num_workgroups = params.length.div_ceil(256);
+
+        if num_workgroups != 0 && num_workgroups <= u16::MAX as u32 {
+            compute_pass.dispatch_workgroups(num_workgroups, 1, 1);
+        } else if num_workgroups != 0 {
+            let floor = num_workgroups.isqrt();
+            let x = floor + (floor * floor != num_workgroups) as u32;
+            let y = num_workgroups.div_ceil(x);
+            compute_pass.dispatch_workgroups(x, y, 1);
+        }
+
+        Ok(())
     }
 
     pub fn sign(

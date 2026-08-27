@@ -1,5 +1,5 @@
 use crate::staging::allocator::StagingChunk;
-use crate::{Tensor, TensorEncoder};
+use crate::{Tensor, TensorEncoder, TensorError};
 pub(crate) use allocator::{StagingAllocator, StagingAllocatorPool};
 pub use reader::{TensorReader, PrintTensorReader};
 pub(crate) use encoder::{Encoder, EncoderPool};
@@ -11,7 +11,13 @@ mod reader;
 mod encoder;
 
 impl<'scope> TensorEncoder<'scope> {
-    pub fn write(&mut self, tensor: &Tensor, mut writer: impl TensorWriter) {
+    pub fn write(
+        &mut self,
+        tensor: &Tensor<'static>,
+        mut writer: impl TensorWriter,
+    ) -> Result<(), TensorError> {
+        self.validate_write(tensor)?;
+
         let mut size = Tensor::data_size(tensor.shape()).unwrap() as usize;
         let mut length = Tensor::buffer_size(tensor.shape()).unwrap().get();
         let mut offset = 0;
@@ -38,6 +44,7 @@ impl<'scope> TensorEncoder<'scope> {
         }
 
         writer.finish();
+        Ok(())
     }
 
     pub fn read(&mut self, tensor: &Tensor, mut reader: impl TensorReader) {

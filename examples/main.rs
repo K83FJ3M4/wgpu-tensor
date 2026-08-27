@@ -38,8 +38,8 @@ fn main() {
  
     let mut encoder = device.create_command_encoder(&Default::default());
     context.infer(&mut encoder, |encoder| {
-        encoder.write(&tensor_a, repeat(2.0).take(4));
-        encoder.write(&tensor_b, repeat(10.0).take(4));
+        encoder.write(&tensor_a, repeat(2.0).take(4))?;
+        encoder.write(&tensor_b, repeat(10.0).take(4))?;
 
         let output = encoder.add(&tensor_a, &tensor_b)?;
         let output = encoder.reciprocal_square_root(&output)?;
