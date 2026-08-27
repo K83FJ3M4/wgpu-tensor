@@ -20,6 +20,7 @@ const RECIPROCAL_SQUARE_ROOT: u32 = 4;
 const EXPONENTIAL: u32 = 5;
 const LOGARITHM: u32 = 6;
 const COPY: u32 = 7;
+const SIGN: u32 = 8;
 
 struct Builtin {
     @builtin(global_invocation_id) invocation: vec3u,
@@ -45,6 +46,14 @@ fn main(builtin: Builtin) {
         case EXPONENTIAL: { output[index] = exp(item); }
         case LOGARITHM: { output[index] = log(item); }
         case COPY: { output[index] = item; }
+        case SIGN: { output[index] = sign(item); }
         default: { output[index] = 0.0; }
     }
+}
+
+fn sign(value: f32) -> f32 {
+    if (value != value) { return value; }
+    if (value < 0.0) { return -1.0; }
+    if (value > 0.0) { return 1.0; }
+    return 0.0;
 }
