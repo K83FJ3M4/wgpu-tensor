@@ -2,7 +2,8 @@ import package::share::indices::workgroupIndex;
 import package::share::broadcast::{
     BroadcastInfo,
     tensorIndex,
-    flattenTensorIndex
+    flattenTensorIndex,
+    getData
 };
 
 @group(0) @binding(0)
@@ -60,6 +61,8 @@ fn main(builtin: Builtin) {
         builtin.invocation >> 4u
     );
 
+    let transposeLhs = getData(params.info, 0u) != 0u;
+    let transposeRhs = getData(params.info, 1u) != 0u;
     let matrixIndex = tile * 16u + localIndex;
     let matrixOffset = inputMatrixIndex
         * params.size.yx * params.innerSize;
@@ -67,29 +70,49 @@ fn main(builtin: Builtin) {
     var accumulator = 0.0;
 
     for (var i = 0u; i < params.innerSize; i += 16u) {
-        let inner = i + localIndex;
-        let matrixIndexValid = matrixIndex < params.size;
-        let innerIndexValid = inner < vec2u(params.innerSize);
-        let indexValid = matrixIndexValid.yx & innerIndexValid;
+        let lhsLocal = select(
+            localIndex,
+            localIndex.yx,
+            transposeLhs
+        );
+        let rhsLocal = select(
+            localIndex,
+            localIndex.yx,
+            transposeRhs
+        );
 
-        if (indexValid.x) {
-            sharedLHS[builtin.invocation] = inputA[
-                matrixOffset.x +
-                matrixIndex.y * params.innerSize +
-                inner.x
+        let lhsRow = tile.y * 16u + lhsLocal.y;
+        let lhsInner = i + lhsLocal.x;
+        let rhsColumn = tile.x * 16u + rhsLocal.x;
+        let rhsInner = i + rhsLocal.y;
+
+        let lhsSharedIndex = lhsLocal.y * 16u + lhsLocal.x;
+        let rhsSharedIndex = rhsLocal.y * 16u + rhsLocal.x;
+
+        if (lhsRow < params.size.y && lhsInner < params.innerSize) {
+            let lhsIndex = select(
+                lhsRow * params.innerSize + lhsInner,
+                lhsInner * params.size.y + lhsRow,
+                transposeLhs
+            );
+            sharedLHS[lhsSharedIndex] = inputA[
+                matrixOffset.x + lhsIndex
             ];
         } else {
-            sharedLHS[builtin.invocation] = 0.0;
+            sharedLHS[lhsSharedIndex] = 0.0;
         }
 
-        if (indexValid.y) {
-            sharedRHS[builtin.invocation] = inputB[
-                matrixOffset.y +
-                inner.y * params.size.x +
-                matrixIndex.x
+        if (rhsColumn < params.size.x && rhsInner < params.innerSize) {
+            let rhsIndex = select(
+                rhsInner * params.size.x + rhsColumn,
+                rhsColumn * params.innerSize + rhsInner,
+                transposeRhs
+            );
+            sharedRHS[rhsSharedIndex] = inputB[
+                matrixOffset.y + rhsIndex
             ];
         } else {
-            sharedRHS[builtin.invocation] = 0.0;
+            sharedRHS[rhsSharedIndex] = 0.0;
         }
 
         workgroupBarrier();

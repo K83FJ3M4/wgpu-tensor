@@ -262,6 +262,10 @@ impl BroadcastInfo {
         }
     }
 
+    fn set_data(&mut self, index: usize, value: u32) {
+        self.divisions[index + 2].data = value;
+    }
+
     fn num_dimensions(&mut self) -> &mut u32 {
         &mut self.divisions[0].data
     }

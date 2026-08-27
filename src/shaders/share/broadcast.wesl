@@ -67,3 +67,7 @@ fn mulHiU32(lhs: u32, rhs: u32) -> u32 {
 
     return lhsHigh * rhsHigh + firstHigh + (second >> 16u);
 }
+
+fn getData(info: BroadcastInfo, index: u32) -> u32 {
+    return info.divisions[index + 2u].data;
+}

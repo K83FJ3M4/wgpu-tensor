@@ -2,6 +2,7 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::{ComputePipeline, ComputePipelineDescriptor, PipelineLayoutDescriptor, include_wgsl};
 use crate::{Tensor, TensorEncoder, TensorError};
 use crate::pipelines::{BroadcastInfo, Pipelines};
+use crate::tensor::ShapeDiff;
 
 #[repr(C)]
 #[derive(Pod, Zeroable, Clone, Copy)]
@@ -18,16 +19,139 @@ impl<'scope> TensorEncoder<'scope> {
         lhs: &Tensor<'scope>,
         rhs: &Tensor<'scope>
     ) -> Result<Tensor<'scope>, TensorError> {
+        self.matmul_with_transpose(lhs, rhs, false, false)
+    }
+
+    pub fn matmul_with_transpose(
+        &mut self,
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>,
+        transpose_lhs: bool,
+        transpose_rhs: bool
+    ) -> Result<Tensor<'scope>, TensorError> {
+        let res = self.matmul_inner(
+            lhs,
+            rhs,
+            transpose_lhs,
+            transpose_rhs
+        )?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            let lhs_required = autograd.require([&res], lhs);
+            let rhs_required = autograd.require([&res], rhs);
+
+            if lhs_required || rhs_required {
+                let res_weak = res.downgrade();
+                let lhs_weak = lhs.downgrade();
+                let rhs_weak = rhs.downgrade();
+                let lhs_shape = lhs.shape();
+                let rhs_shape = rhs.shape();
+
+                let lhs_value = rhs_required.then(|| lhs.clone());
+                let rhs_value = lhs_required.then(|| rhs.clone());
+
+                autograd.backwards(move |encoder, gradients| {
+                    let Some(output_grad) = gradients.remove(res_weak) else {
+                        return Ok(());
+                    };
+
+                    if let Some(rhs) = rhs_value {
+                        let lhs_grad = if transpose_lhs {
+                            encoder.matmul_with_transpose(
+                                &rhs,
+                                &output_grad,
+                                transpose_rhs,
+                                true
+                            )?
+                        } else {
+                            encoder.matmul_with_transpose(
+                                &output_grad,
+                                &rhs,
+                                false,
+                                !transpose_rhs
+                            )?
+                        };
+
+                        let diff = ShapeDiff::new(
+                            lhs_shape,
+                            lhs_grad.shape()
+                        );
+                        let lhs_grad = encoder.sum(&lhs_grad, diff)?;
+                        gradients.insert(
+                            encoder,
+                            lhs_weak,
+                            lhs_grad,
+                        )?;
+                    }
+
+                    if let Some(lhs) = lhs_value {
+                        let rhs_grad = if transpose_rhs {
+                            encoder.matmul_with_transpose(
+                                &output_grad,
+                                &lhs,
+                                true,
+                                transpose_lhs
+                            )?
+                        } else {
+                            encoder.matmul_with_transpose(
+                                &lhs,
+                                &output_grad,
+                                !transpose_lhs,
+                                false
+                            )?
+                        };
+
+                        let diff = ShapeDiff::new(
+                            rhs_shape,
+                            rhs_grad.shape()
+                        );
+                        let rhs_grad = encoder.sum(&rhs_grad, diff)?;
+                        gradients.insert(
+                            encoder,
+                            rhs_weak,
+                            rhs_grad,
+                        )?;
+                    }
+
+                    Ok(())
+                });
+            }
+        }
+
+        Ok(res)
+    }
+
+    fn matmul_inner(
+        &mut self,
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>,
+        transpose_lhs: bool,
+        transpose_rhs: bool
+    ) -> Result<Tensor<'scope>, TensorError> {
         let lhs_shape = lhs.shape();
         let rhs_shape = rhs.shape();
 
+        let lhs_matrix_shape = if transpose_lhs {
+            [lhs_shape[1], lhs_shape[0]]
+        } else {
+            [lhs_shape[0], lhs_shape[1]]
+        };
+        let rhs_matrix_shape = if transpose_rhs {
+            [rhs_shape[1], rhs_shape[0]]
+        } else {
+            [rhs_shape[0], rhs_shape[1]]
+        };
+
+        let [lhs_columns, lhs_rows] = lhs_matrix_shape;
+        let [rhs_columns, rhs_rows] = rhs_matrix_shape;
+
         let mut params = MatmulParameters::zeroed();
-        if lhs_shape[0] != rhs_shape[1] {
+        if lhs_columns != rhs_rows {
             return Err(TensorError::IncompatibleMatrices)
         }
 
-        params.inner_size = lhs_shape[0];
-        params.size = [rhs_shape[0], lhs_shape[1]];
+        params.inner_size = lhs_columns;
+        params.size = [rhs_columns, lhs_rows];
 
         let mut shape = lhs_shape;
         shape[0] = params.size[0];
@@ -56,6 +180,8 @@ impl<'scope> TensorEncoder<'scope> {
             &tiles
         )?;
 
+        params.info.set_data(0, transpose_lhs as u32);
+        params.info.set_data(1, transpose_rhs as u32);
         let compute_pass = self.encoder.compute(
             Pipelines::matmul,
             &params

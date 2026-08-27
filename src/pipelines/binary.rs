@@ -253,6 +253,7 @@ impl<'scope> TensorEncoder<'scope> {
         Ok(res)
     }
 
+    //TODO masks with "select" and "greater_equal"
     fn extremum(
         &mut self,
         operation: BinaryOperation,
