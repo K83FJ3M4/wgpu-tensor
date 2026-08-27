@@ -49,6 +49,8 @@ pub enum TensorError {
     InvalidLossShape,
     InvalidRange,
     TrainableWriteDuringLearning,
+    InsufficientData,
+    ExcessData,
 }
 
 impl<'scope> TensorEncoder<'scope> {

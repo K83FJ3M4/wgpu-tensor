@@ -30,7 +30,7 @@ impl<'scope> TensorEncoder<'scope> {
 
             let data = chunk.data();
             let data_len = data.len().min(size);
-            writer.write(chunk.data().into_slice(..data_len));
+            writer.write(chunk.data().into_slice(..data_len))?;
 
             let slice = chunk.slice();
             self.encoder.command().copy_buffer_to_buffer(
@@ -43,8 +43,7 @@ impl<'scope> TensorEncoder<'scope> {
             size -= data_len;
         }
 
-        writer.finish();
-        Ok(())
+        writer.finish()
     }
 
     pub fn read(&mut self, tensor: &Tensor, mut reader: impl TensorReader) {
