@@ -26,7 +26,7 @@ impl<'scope> TensorEncoder<'scope> {
         self.constant(1.0, shape) 
     }
 
-    fn constant(
+    pub fn constant(
         &mut self,
         value: f32,
         shape: impl IntoShape

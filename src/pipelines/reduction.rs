@@ -54,6 +54,33 @@ impl<'scope> TensorEncoder<'scope> {
         Ok(res)
     }
 
+    pub fn mean(
+        &mut self,
+        operand: &Tensor<'scope>,
+        dimensions: impl IntoIndices
+    ) -> Result<Tensor<'scope>, TensorError> {
+        let operand_shape = operand.shape();
+        let mut output_shape = operand_shape;
+        let mut count = 1u32;
+
+        for index in dimensions.indices() {
+            let Some(dimension) = output_shape.get_mut(index) else {
+                return Err(TensorError::IndexOutOfBounds)
+            };
+
+            count = count.checked_mul(*dimension)
+                .ok_or(TensorError::OversizedDispatch)?;
+            *dimension = 1;
+        }
+
+        let sum = self.sum(
+            operand,
+            ShapeDiff::new(operand_shape, output_shape)
+        )?;
+        let count = self.constant(count as f32, 1)?;
+        self.divide(&sum, &count)
+    }
+
     pub fn prod(
         &mut self,
         operand: &Tensor<'scope>,
