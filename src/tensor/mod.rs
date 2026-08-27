@@ -7,7 +7,7 @@ use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buff
 pub use shape::{Shape, IntoShape};
 pub use indices::IntoIndices;
 pub(super) use pool::TensorPool;
-pub(super) use indices::ShapeDiff;
+pub(super) use indices::{AllDimensions, ShapeDiff};
 
 use crate::optimizers::{Optimizer, OptimizerConfig};
 use crate::pipelines::Pipelines;

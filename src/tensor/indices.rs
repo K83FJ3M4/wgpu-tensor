@@ -1,3 +1,5 @@
+use std::array::from_fn;
+
 use crate::Shape;
 
 pub trait IntoIndices {
@@ -7,6 +9,15 @@ pub trait IntoIndices {
 pub(crate) struct ShapeDiff {
     lhs: Shape,
     rhs: Shape
+}
+
+pub(crate) struct AllDimensions;
+
+impl IntoIndices for AllDimensions {
+    fn indices(self) -> impl Iterator<Item = usize> {
+        let indices: [usize; 8] = from_fn(|i| i);
+        indices.into_iter()
+    }
 }
 
 impl ShapeDiff {
