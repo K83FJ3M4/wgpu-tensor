@@ -2,6 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::tensor::WeakTensor;
 use crate::{IntoShape, Tensor, TensorContext, TensorEncoder, TensorError};
+pub use sgd::{SGDConfig, SGDOptimizer};
+
+mod sgd;
 
 pub trait OptimizerConfig {
     type Optimizer: Optimizer;

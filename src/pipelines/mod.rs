@@ -11,6 +11,7 @@ mod matmul;
 mod unary;
 mod constant;
 mod broadcast;
+mod optimization;
 
 pub(crate) struct Pipelines {
     pub(crate) device: Device,
@@ -18,6 +19,7 @@ pub(crate) struct Pipelines {
     pub(crate) tensor_output_layout: BindGroupLayout,
     pub(crate) param_layouts: ParamLayouts,
 
+    optimization: Option<ComputePipeline>,
     reduction: Option<ComputePipeline>,
     broadcast: Option<ComputePipeline>,
     constant: Option<ComputePipeline>,
@@ -90,6 +92,7 @@ impl Pipelines {
             tensor_output_layout,
             device,
 
+            optimization: None,
             reduction: None,
             broadcast: None,
             constant: None,

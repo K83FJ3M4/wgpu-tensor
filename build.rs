@@ -36,4 +36,10 @@ fn main() {
             &"package::broadcast".parse().unwrap(),
             "broadcast",
         );
+
+    Wesl::new("./src/shaders")
+        .build_artifact(
+            &"package::optimization".parse().unwrap(),
+            "optimization",
+        );
 }
