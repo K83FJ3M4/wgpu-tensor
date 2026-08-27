@@ -14,6 +14,7 @@ pub const REQUIRED_DOWNLEVEL_FLAGS: DownlevelFlags = {
         .union(DownlevelFlags::COMPUTE_SHADERS)
 };
 
+mod composite;
 mod tensor;
 mod staging;
 mod pipelines;
