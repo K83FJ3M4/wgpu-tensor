@@ -32,6 +32,7 @@ impl BinaryOperation {
     pub const MINIMUM: Self = Self(5);
     pub const MAXIMUM: Self = Self(6);
     pub const REMAINDER: Self = Self(7);
+    pub const EQUAL: Self = Self(8);
 }
 
 impl<'scope> TensorEncoder<'scope> {
@@ -251,6 +252,15 @@ impl<'scope> TensorEncoder<'scope> {
         }
 
         Ok(res)
+    }
+
+    //TODO implement boolean ops so this is no longer required
+    pub(crate) fn equal(
+        &mut self,
+        lhs: &Tensor<'scope>,
+        rhs: &Tensor<'scope>
+    ) -> Result<Tensor<'scope>, TensorError> {
+        self.binary(BinaryOperation::EQUAL, lhs, rhs)
     }
 
     //TODO masks with "select" and "greater_equal"

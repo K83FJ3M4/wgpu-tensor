@@ -30,6 +30,7 @@ const POWER: u32 = 4;
 const MINIMUM: u32 = 5;
 const MAXIMUM: u32 = 6;
 const REMAINDER: u32 = 7;
+const EQUAL: u32 = 8;
 
 struct Builtin {
     @builtin(global_invocation_id) invocation: vec3u,
@@ -68,6 +69,9 @@ fn main(builtin: Builtin) {
         case MINIMUM: { output[outputIndex] = minimum(lhs, rhs); }
         case MAXIMUM: { output[outputIndex] = maximum(lhs, rhs); }
         case REMAINDER: { output[outputIndex] = remainder(lhs, rhs); }
+        case EQUAL: {
+            output[outputIndex] = select(0.0, 1.0, lhs == rhs);
+        }
         default: { output[outputIndex] = 0.0; }
     }
 }

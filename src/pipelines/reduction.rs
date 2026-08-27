@@ -1,7 +1,9 @@
 use bytemuck::{Pod, Zeroable};
 use wgpu::{ComputePipeline, ComputePipelineDescriptor, PipelineLayoutDescriptor, include_wgsl};
 
+use crate::optimizers::AutogradEncoder;
 use crate::pipelines::Pipelines;
+use crate::tensor::ShapeDiff;
 use crate::{IntoIndices, Tensor, TensorEncoder, TensorError};
 
 #[repr(C)]
@@ -32,11 +34,24 @@ impl<'scope> TensorEncoder<'scope> {
         operand: &Tensor<'scope>,
         dimensions: impl IntoIndices
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.reduction(
+        let res = self.reduction(
             ReductionOperation::SUM,
             operand,
             dimensions
-        )
+        )?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            let operand_shape = operand.shape();
+            autograd.backwards_reduction(
+                operand,
+                &res,
+                move |encoder, output_grad| {
+                    encoder.broadcast(output_grad, operand_shape)
+                }
+            );
+        }
+
+        Ok(res)
     }
 
     pub fn prod(
@@ -44,11 +59,65 @@ impl<'scope> TensorEncoder<'scope> {
         operand: &Tensor<'scope>,
         dimensions: impl IntoIndices
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.reduction(
+        let res = self.reduction(
             ReductionOperation::PRODUCT,
             operand,
             dimensions
-        )
+        )?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            let operand_value = operand.clone();
+            let result = res.clone();
+            let operand_shape = operand_value.shape();
+            let result_shape = result.shape();
+
+            autograd.backwards_reduction(
+                operand,
+                &res,
+                move |encoder, output_grad| {
+                    let zero = encoder.zeros(1)?;
+                    let one = encoder.ones(1)?;
+                    let zero_mask = encoder.equal(&operand_value, &zero)?;
+                    let safe_operand = encoder.add(
+                        &operand_value,
+                        &zero_mask
+                    )?;
+
+                    let zero_count = encoder.sum(
+                        &zero_mask,
+                        ShapeDiff::new(result_shape, operand_shape)
+                    )?;
+                    let nonzero_product = encoder.prod(
+                        &safe_operand,
+                        ShapeDiff::new(result_shape, operand_shape)
+                    )?;
+
+                    let no_zeros = encoder.equal(&zero_count, &zero)?;
+                    let one_zero = encoder.equal(&zero_count, &one)?;
+
+                    let normal = encoder.divide(&result, &safe_operand)?;
+                    let normal = encoder.multiply(&normal, &no_zeros)?;
+
+                    let single_zero = encoder.multiply(
+                        &zero_mask,
+                        &nonzero_product
+                    )?;
+                    let single_zero = encoder.multiply(
+                        &single_zero,
+                        &one_zero
+                    )?;
+
+                    let derivative = encoder.add(&normal, &single_zero)?;
+                    let output_grad = encoder.broadcast(
+                        output_grad,
+                        operand_shape
+                    )?;
+                    encoder.multiply(&output_grad, &derivative)
+                }
+            );
+        }
+
+        Ok(res)
     }
 
     pub fn min(
@@ -56,7 +125,7 @@ impl<'scope> TensorEncoder<'scope> {
         operand: &Tensor<'scope>,
         dimensions: impl IntoIndices
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.reduction(
+        self.extremum_reduction(
             ReductionOperation::MINIMUM,
             operand,
             dimensions
@@ -68,11 +137,51 @@ impl<'scope> TensorEncoder<'scope> {
         operand: &Tensor<'scope>,
         dimensions: impl IntoIndices
     ) -> Result<Tensor<'scope>, TensorError> {
-        self.reduction(
+        self.extremum_reduction(
             ReductionOperation::MAXIMUM,
             operand,
             dimensions
         )
+    }
+
+    fn extremum_reduction(
+        &mut self,
+        operation: ReductionOperation,
+        operand: &Tensor<'scope>,
+        dimensions: impl IntoIndices
+    ) -> Result<Tensor<'scope>, TensorError> {
+        let res = self.reduction(operation, operand, dimensions)?;
+
+        if let Some(autograd) = self.autograd.as_mut() {
+            let operand_value = operand.clone();
+            let result = res.clone();
+            let operand_shape = operand_value.shape();
+            let result_shape = result.shape();
+
+            autograd.backwards_reduction(
+                operand,
+                &res,
+                move |encoder, output_grad| {
+                    let result = encoder.broadcast(
+                        &result,
+                        operand_shape
+                    )?;
+                    let mask = encoder.equal(&operand_value, &result)?;
+                    let count = encoder.sum(
+                        &mask,
+                        ShapeDiff::new(result_shape, operand_shape)
+                    )?;
+                    let output_grad = encoder.divide(output_grad, &count)?;
+                    let output_grad = encoder.broadcast(
+                        &output_grad,
+                        operand_shape
+                    )?;
+                    encoder.multiply(&output_grad, &mask)
+                }
+            );
+        }
+
+        Ok(res)
     }
     
     fn reduction(
@@ -154,6 +263,36 @@ impl<'scope> TensorEncoder<'scope> {
             } else {
                 temp = Some(output)
             }
+        }
+    }
+}
+
+impl<'scope> AutogradEncoder<'scope> {
+    fn backwards_reduction(
+        &mut self,
+        operand: &Tensor<'scope>,
+        res: &Tensor<'scope>,
+        gradient: impl FnOnce(
+            &mut TensorEncoder<'scope>,
+            &Tensor<'scope>,
+        ) -> Result<Tensor<'scope>, TensorError> + 'scope,
+    ) {
+        if self.require([res], operand) {
+            let res_weak = res.downgrade();
+            let operand_weak = operand.downgrade();
+
+            self.backwards(move |encoder, gradients| {
+                let Some(output_grad) = gradients.remove(res_weak) else {
+                    return Ok(())
+                };
+
+                let input_grad = gradient(encoder, &output_grad)?;
+                gradients.insert(
+                    encoder,
+                    operand_weak,
+                    input_grad
+                )
+            });
         }
     }
 }
