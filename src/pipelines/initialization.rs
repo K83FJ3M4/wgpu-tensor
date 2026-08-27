@@ -57,6 +57,25 @@ impl<'scope> TensorEncoder<'scope> {
         Ok(output)
     }
 
+    pub fn fill(
+        &mut self,
+        output: &Tensor<'static>,
+        value: f32,
+    ) -> Result<(), TensorError> {
+        self.validate_write(output)?;
+
+        self.initialize_inner(output, InitializationParameters {
+            length: 0,
+            operation: CONSTANT,
+            constant_value: value,
+            random_lower: 0.0,
+            random_upper: 0.0,
+            seed_low: 0,
+            seed_high: 0,
+            stream: 0,
+        })
+    }
+
     pub fn random_uniform(
         &mut self,
         output: &Tensor<'static>,
