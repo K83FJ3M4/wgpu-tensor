@@ -83,12 +83,12 @@ impl TensorContext {
         }
     }
 
-    pub fn infer(
+    pub fn infer<T>(
         &mut self,
         encoder: &mut CommandEncoder,
         callback: impl for<'scope> FnOnce(&mut TensorEncoder<'scope>)
-            -> Result<(), TensorError>
-    ) -> Result<(), TensorError> {
+            -> Result<T, TensorError>
+    ) -> Result<T, TensorError> {
         let read_allocator = StagingAllocator::new(&self.read_pool);
         let write_allocator = StagingAllocator::new(&self.write_pool);
         let encoder = Encoder::new(&mut self.encoder_pool, encoder);
