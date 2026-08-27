@@ -30,4 +30,10 @@ fn main() {
             &"package::constant".parse().unwrap(),
             "constant",
         );
+
+    Wesl::new("./src/shaders")
+        .build_artifact(
+            &"package::broadcast".parse().unwrap(),
+            "broadcast",
+        );
 }

@@ -10,6 +10,7 @@ mod binary;
 mod matmul;
 mod unary;
 mod constant;
+mod broadcast;
 
 pub(crate) struct Pipelines {
     pub(crate) device: Device,
@@ -18,6 +19,7 @@ pub(crate) struct Pipelines {
     pub(crate) param_layouts: ParamLayouts,
 
     reduction: Option<ComputePipeline>,
+    broadcast: Option<ComputePipeline>,
     constant: Option<ComputePipeline>,
     binary: Option<ComputePipeline>,
     matmul: Option<ComputePipeline>,
@@ -89,6 +91,7 @@ impl Pipelines {
             device,
 
             reduction: None,
+            broadcast: None,
             constant: None,
             binary: None,
             matmul: None,

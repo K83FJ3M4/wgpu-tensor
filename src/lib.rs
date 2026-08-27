@@ -1,6 +1,4 @@
 
-use std::collections::{HashMap, HashSet};
-
 pub use tensor::{Tensor, IntoShape, IntoIndices, Shape};
 pub use staging::{TensorReader, TensorWriter, PrintTensorReader};
 use wgpu::{BufferView, BufferViewMut, CommandEncoder, Device, DownlevelFlags, Features, Limits};
