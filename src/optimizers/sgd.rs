@@ -1,6 +1,7 @@
 use crate::{Tensor, TensorContext, TensorEncoder, TensorError};
 use crate::optimizers::{Optimizer, OptimizerConfig};
 
+#[derive(Clone, Copy)]
 pub struct SGDConfig {
     pub learning_rate: f32
 }
