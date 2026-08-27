@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::{BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ComputePipeline, Device, ShaderStages};
@@ -45,6 +46,16 @@ struct FastDivU32 {
     magic: u32,
     shift: u32,
     data: u32
+}
+
+pub(crate) struct RngState {
+    seed: u64,
+    stream: u32
+}
+
+pub(crate) struct Seed {
+    seed: u64,
+    stream: u32
 }
 
 impl Pipelines {
@@ -289,4 +300,30 @@ pub fn pack_2x_u16([x, y]: [u32; 2]) -> u32 {
 #[inline]
 pub fn unpack_2x_u16(v: u32) -> [u32; 2] {
     [v & 0xFFFF, v >> 16]
+}
+
+impl RngState {
+    pub(crate) fn new() -> RngState {
+        let mut seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+
+        RngState {
+            seed: seed,
+            stream: 0,
+        }
+    }
+
+    pub(crate) fn next(&mut self) -> Seed {
+        self.seed += 1;
+        Seed {
+            stream: self.stream,
+            seed: self.seed,
+        }
+    } 
 }

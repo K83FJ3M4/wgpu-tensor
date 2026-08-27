@@ -1,9 +1,9 @@
-
 pub use tensor::{Tensor, IntoShape, IntoIndices, Shape};
 pub use staging::{TensorReader, TensorWriter, PrintTensorReader};
 use wgpu::{BufferView, BufferViewMut, CommandEncoder, Device, DownlevelFlags, Features, Limits};
 
 use crate::optimizers::AutogradEncoder;
+use crate::pipelines::RngState;
 use crate::staging::{Encoder, EncoderPool, StagingAllocator, StagingAllocatorPool};
 use crate::tensor::TensorPool;
 
@@ -19,12 +19,14 @@ mod staging;
 mod pipelines;
 
 pub mod optimizers;
+pub mod layers;
 
 pub struct TensorContext {
     write_pool: StagingAllocatorPool<BufferViewMut>,
     read_pool: StagingAllocatorPool<BufferView>,
     encoder_pool: EncoderPool,
-    tensors: TensorPool
+    tensors: TensorPool,
+    rng: RngState
 }
 
 pub struct TensorEncoder<'scope> {
@@ -32,7 +34,8 @@ pub struct TensorEncoder<'scope> {
     write_allocator: StagingAllocator<'scope, BufferViewMut>,
     autograd: Option<AutogradEncoder<'scope>>,
     tensors: &'scope TensorPool,
-    encoder: Encoder<'scope>
+    encoder: Encoder<'scope>,
+    rng: &'scope mut RngState
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -66,12 +69,14 @@ impl TensorContext {
         let read_pool = StagingAllocatorPool::new(device.clone());
         let write_pool = StagingAllocatorPool::new(device.clone());
         let encoder_pool = EncoderPool::new(device);
+        let rng = RngState::new();
 
         TensorContext {
             encoder_pool,
             read_pool,
             write_pool,
             tensors,
+            rng
         }
     }
 
@@ -87,6 +92,7 @@ impl TensorContext {
 
         callback(&mut TensorEncoder {
             tensors: &mut self.tensors,
+            rng: &mut self.rng,
             autograd: None,
             read_allocator,
             write_allocator,
@@ -106,6 +112,7 @@ impl TensorContext {
         let autograd = AutogradEncoder::new();
         let mut encoder = TensorEncoder {
             tensors: &mut self.tensors,
+            rng: &mut self.rng,
             autograd: Some(autograd),
             read_allocator,
             write_allocator,

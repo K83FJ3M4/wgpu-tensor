@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 use wgpu::{ComputePipeline, ComputePipelineDescriptor, PipelineLayoutDescriptor, include_wgsl};
 
-use crate::pipelines::Pipelines;
+use crate::pipelines::{Pipelines, Seed};
 use crate::{IntoShape, Tensor, TensorEncoder, TensorError};
 
 #[repr(C)]
@@ -80,9 +80,7 @@ impl<'scope> TensorEncoder<'scope> {
         &mut self,
         output: &Tensor<'static>,
         lower: f32,
-        upper: f32,
-        seed: u64,
-        stream: u32,
+        upper: f32
     ) -> Result<(), TensorError> {
         self.validate_write(output)?;
 
@@ -90,6 +88,7 @@ impl<'scope> TensorEncoder<'scope> {
             return Err(TensorError::InvalidRange)
         }
 
+        let Seed { seed, stream } = self.rng.next();
         self.initialize_inner(output, InitializationParameters {
             length: 0,
             operation: RANDOM_UNIFORM,
@@ -106,23 +105,19 @@ impl<'scope> TensorEncoder<'scope> {
         &mut self,
         output: &Tensor<'static>,
         fan_in: u32,
-        fan_out: u32,
-        seed: u64,
-        stream: u32,
+        fan_out: u32
     ) -> Result<(), TensorError> {
         let bound = (6.0 / (fan_in as f32 + fan_out as f32)).sqrt();
-        self.random_uniform(output, -bound, bound, seed, stream)
+        self.random_uniform(output, -bound, bound)
     }
 
     pub fn he_uniform(
         &mut self,
         output: &Tensor<'static>,
         fan_in: u32,
-        seed: u64,
-        stream: u32,
     ) -> Result<(), TensorError> {
         let bound = (6.0 / fan_in as f32).sqrt();
-        self.random_uniform(output, -bound, bound, seed, stream)
+        self.random_uniform(output, -bound, bound)
     }
 
     fn initialize_inner(
