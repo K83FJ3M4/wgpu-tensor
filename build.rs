@@ -27,8 +27,8 @@ fn main() {
 
     Wesl::new("./src/shaders")
         .build_artifact(
-            &"package::constant".parse().unwrap(),
-            "constant",
+            &"package::initialization".parse().unwrap(),
+            "initialization",
         );
 
     Wesl::new("./src/shaders")

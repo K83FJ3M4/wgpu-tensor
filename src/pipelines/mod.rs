@@ -9,7 +9,7 @@ mod reduction;
 mod binary;
 mod matmul;
 mod unary;
-mod constant;
+mod initialization;
 mod broadcast;
 mod optimization;
 
@@ -19,10 +19,10 @@ pub(crate) struct Pipelines {
     pub(crate) tensor_output_layout: BindGroupLayout,
     pub(crate) param_layouts: ParamLayouts,
 
+    initialization: Option<ComputePipeline>,
     optimization: Option<ComputePipeline>,
     reduction: Option<ComputePipeline>,
     broadcast: Option<ComputePipeline>,
-    constant: Option<ComputePipeline>,
     binary: Option<ComputePipeline>,
     matmul: Option<ComputePipeline>,
     unary: Option<ComputePipeline>,
@@ -95,7 +95,7 @@ impl Pipelines {
             optimization: None,
             reduction: None,
             broadcast: None,
-            constant: None,
+            initialization: None,
             binary: None,
             matmul: None,
             unary: None

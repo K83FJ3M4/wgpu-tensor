@@ -42,7 +42,8 @@ pub enum TensorError {
     OversizedDispatch,
     IndexOutOfBounds,
     IncompatibleMatrices,
-    InvalidLossShape
+    InvalidLossShape,
+    InvalidRange,
 }
 
 impl TensorContext {
