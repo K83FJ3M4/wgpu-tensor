@@ -145,7 +145,7 @@ impl<'a> Encoder<'a> {
         &mut self.command_encoder
     } 
 
-    pub(crate) fn pipelines(&mut self) -> &Pipelines {
+    pub(crate) fn pipelines(&self) -> &Pipelines {
         &self.pool.pipelines
     }
 }
@@ -214,8 +214,8 @@ impl EncoderPool {
         } 
     }
 
-    pub(crate) fn pipelines(&mut self) -> &mut Pipelines {
-        &mut self.pipelines
+    pub(crate) fn pipelines(&self) -> &Pipelines {
+        &self.pipelines
     }
 }
 

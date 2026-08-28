@@ -128,4 +128,8 @@ impl TensorContext {
         let autograd = encoder.autograd.take().unwrap();
         autograd.encode(&mut encoder, loss)
     }
+
+    pub fn device(&self) -> &Device {
+        &self.encoder_pool.pipelines().device
+    }
 }
