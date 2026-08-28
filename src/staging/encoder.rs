@@ -1,10 +1,9 @@
-use std::collections::HashMap;
 use std::num::NonZeroU64;
-use std::sync::mpsc::{Receiver, Sender, channel};
-
 use bytemuck::{Pod, bytes_of};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindingResource, Buffer, BufferAddress, BufferBinding, BufferDescriptor, BufferUsages, BufferViewMut, CommandEncoder, ComputePass, ComputePassDescriptor, ComputePipeline, Device, MapMode};
 
+use crate::cache::CacheMap;
 use crate::pipelines::Pipelines;
 
 const CPU_BLOCK_SIZE: u64 = 4 << 20;
@@ -13,7 +12,7 @@ const GPU_BLOCK_SIZE: u64 = 256 << 10;
 pub(crate) struct EncoderPool {
     parameters: Buffer,
     pipelines: Pipelines,
-    bind_groups: HashMap<usize, BindGroup>,
+    bind_groups: CacheMap<usize, BindGroup>,
     receiver: Receiver<Buffer>,
     sender: Sender<Buffer>,
 }
@@ -21,7 +20,7 @@ pub(crate) struct EncoderPool {
 pub(crate) struct Encoder<'a> {
     command_encoder: &'a mut CommandEncoder,
     compute_pass: Option<ComputePass<'static>>,
-    pool: &'a mut EncoderPool,
+    pool: &'a EncoderPool,
     view: Option<EncoderStagingBuffer>,
     cpu_offset: u64,
     gpu_offset: u64
@@ -34,7 +33,7 @@ struct EncoderStagingBuffer {
 
 impl<'a> Encoder<'a> {
     pub(crate) fn new(
-        pool: &'a mut EncoderPool,
+        pool: &'a EncoderPool,
         command_encoder: &'a mut CommandEncoder
     ) -> Encoder<'a> {
         Encoder {
@@ -49,7 +48,7 @@ impl<'a> Encoder<'a> {
 
     pub(crate) fn compute<T: Pod>(
         &mut self,
-        pipeline: fn(&mut Pipelines) -> &ComputePipeline,
+        pipeline: fn(&Pipelines) -> &ComputePipeline,
         params: &T
     ) -> &mut ComputePass<'static> {
         let bytes = bytes_of(params);
@@ -126,11 +125,11 @@ impl<'a> Encoder<'a> {
         });
 
         compute_pass.set_bind_group(
-            0, self.pool.bind_group::<T>(),
+            0, &self.pool.bind_group::<T>(),
             &[self.gpu_offset as u32]
         );
 
-        let pipeline = pipeline(&mut self.pool.pipelines);
+        let pipeline = pipeline(&self.pool.pipelines);
         compute_pass.set_pipeline(pipeline);
 
         self.cpu_offset += length;
@@ -143,15 +142,15 @@ impl<'a> Encoder<'a> {
         &mut self.command_encoder
     } 
 
-    pub(crate) fn pipelines(&mut self) -> &mut Pipelines {
-        &mut self.pool.pipelines
+    pub(crate) fn pipelines(&mut self) -> &Pipelines {
+        &self.pool.pipelines
     }
 }
 
 impl EncoderPool {
     pub(crate) fn new(device: Device) -> EncoderPool {
 
-        let (sender, receiver) = channel();
+        let (sender, receiver) = unbounded();
         let parameters = device.create_buffer(&BufferDescriptor {
             label: None,
             mapped_at_creation: false,
@@ -162,20 +161,20 @@ impl EncoderPool {
 
         EncoderPool {
             pipelines: Pipelines::new(device),
-            bind_groups: HashMap::new(),
+            bind_groups: CacheMap::new(),
             parameters,
             receiver,
             sender
         }
     }
 
-    fn bind_group<'a, T: Pod>(&'a mut self) -> &'a BindGroup {
-        let layout = self.pipelines.param_layouts
-            .get::<T>(&self.pipelines.device);
-        self.bind_groups.entry(size_of::<T>()).or_insert_with(|| {
+    fn bind_group<T: Pod>(&self) -> BindGroup {
+        let layout = self.pipelines.param_layout::<T>(&self.pipelines.device);
+
+        self.bind_groups.get(size_of::<T>(), || {
             self.pipelines.device.create_bind_group(&BindGroupDescriptor {
                 label: None,
-                layout,
+                layout: &layout,
                 entries: &[BindGroupEntry {
                     binding: 0,
                     resource: BindingResource::Buffer(BufferBinding {

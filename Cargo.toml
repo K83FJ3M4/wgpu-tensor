@@ -6,6 +6,7 @@ exclude = ["rust-toolchain.toml"]
 
 [dependencies]
 bytemuck = { version = "1", features = ["derive"] }
+crossbeam-channel = "0.5.16"
 wgpu = { version = "30.0.0", default-features = false, features = ["wgsl"] }
 
 [dev-dependencies]

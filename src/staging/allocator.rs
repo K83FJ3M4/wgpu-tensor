@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{Receiver, Sender, channel};
 
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use wgpu::{Buffer, BufferDescriptor, BufferSlice, BufferUsages, BufferView, BufferViewMut, CommandEncoder, Device, MAP_ALIGNMENT, MapMode, WriteOnly};
 
 const STATUS_UNMAPPED: usize = 0;
@@ -127,7 +127,7 @@ impl<'a, T: StagingBufferView> StagingAllocator<'a, T> {
 
 impl<T: StagingBufferView> StagingAllocatorPool<T> {
     pub(crate) fn new(device: Device) -> StagingAllocatorPool<T> {
-        let (sender, receiver) = channel();
+        let (sender, receiver) = unbounded();
         StagingAllocatorPool {
             marker: PhantomData,
             receiver,

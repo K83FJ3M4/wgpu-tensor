@@ -1,9 +1,11 @@
-use std::collections::HashMap;
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::{BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ComputePipeline, Device, ShaderStages};
 
+use crate::cache::CacheMap;
 use crate::{Shape, TensorError};
 
 mod reduction;
@@ -18,19 +20,15 @@ pub(crate) struct Pipelines {
     pub(crate) device: Device,
     pub(crate) tensor_input_layout: BindGroupLayout,
     pub(crate) tensor_output_layout: BindGroupLayout,
-    pub(crate) param_layouts: ParamLayouts,
+    pub(crate) param_layouts: CacheMap<usize, BindGroupLayout>,
 
-    initialization: Option<ComputePipeline>,
-    optimization: Option<ComputePipeline>,
-    reduction: Option<ComputePipeline>,
-    broadcast: Option<ComputePipeline>,
-    binary: Option<ComputePipeline>,
-    matmul: Option<ComputePipeline>,
-    unary: Option<ComputePipeline>,
-}
-
-pub(crate) struct ParamLayouts {
-    cache: HashMap<usize, BindGroupLayout>
+    initialization: OnceLock<ComputePipeline>,
+    optimization: OnceLock<ComputePipeline>,
+    reduction: OnceLock<ComputePipeline>,
+    broadcast: OnceLock<ComputePipeline>,
+    binary: OnceLock<ComputePipeline>,
+    matmul: OnceLock<ComputePipeline>,
+    unary: OnceLock<ComputePipeline>,
 }
 
 #[repr(C)]
@@ -50,7 +48,7 @@ struct FastDivU32 {
 
 pub(crate) struct RngState {
     seed: u64,
-    stream: u32
+    stream: AtomicU32
 }
 
 pub(crate) struct Seed {
@@ -98,32 +96,24 @@ impl Pipelines {
         );
 
         Pipelines {
-            param_layouts: ParamLayouts::new(),
+            param_layouts: CacheMap::new(),
             tensor_input_layout,
             tensor_output_layout,
             device,
 
-            optimization: None,
-            reduction: None,
-            broadcast: None,
-            initialization: None,
-            binary: None,
-            matmul: None,
-            unary: None
+            optimization: OnceLock::new(),
+            reduction: OnceLock::new(),
+            broadcast: OnceLock::new(),
+            initialization: OnceLock::new(),
+            binary: OnceLock::new(),
+            matmul: OnceLock::new(),
+            unary: OnceLock::new()
         }
     } 
-}
 
-impl ParamLayouts {
-    fn new() -> ParamLayouts {
-        ParamLayouts {
-            cache: HashMap::new()
-        }
-    }
-
-    pub(crate) fn get<T: Pod>(&mut self, device: &Device) -> &BindGroupLayout {
+    pub(crate) fn param_layout<T: Pod>(&self, device: &Device) -> BindGroupLayout {
         let key = size_of::<T>();
-        self.cache.entry(key).or_insert_with(|| {
+        self.param_layouts.get(key, || {
             let param_ty = BindingType::Buffer {
                 ty: BufferBindingType::Uniform,
                 has_dynamic_offset: true,
@@ -315,14 +305,13 @@ impl RngState {
 
         RngState {
             seed: seed,
-            stream: 0,
+            stream: AtomicU32::new(0),
         }
     }
 
-    pub(crate) fn next(&mut self) -> Seed {
-        self.seed += 1;
+    pub(crate) fn next(&self) -> Seed {
         Seed {
-            stream: self.stream,
+            stream: self.stream.fetch_add(1, Ordering::Relaxed),
             seed: self.seed,
         }
     } 

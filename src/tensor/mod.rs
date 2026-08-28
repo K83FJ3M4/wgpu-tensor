@@ -1,8 +1,8 @@
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, Weak};
-use std::sync::mpsc::Sender;
 
 use bytemuck::Contiguous;
+use crossbeam_channel::Sender;
 use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress, BufferDescriptor, BufferSize, BufferUsages, COPY_BUFFER_ALIGNMENT, ComputePass, Device};
 pub use shape::{Shape, IntoShape};
 pub use indices::IntoIndices;
@@ -107,7 +107,7 @@ impl<'scope> Tensor<'scope> {
     }
     
     fn create(
-        pipelines: &mut Pipelines,
+        pipelines: &Pipelines,
         shape: Shape,
         size: BufferSize,
         domain: TensorDomain<'scope>

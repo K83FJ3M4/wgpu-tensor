@@ -158,21 +158,19 @@ impl<'scope> TensorEncoder<'scope> {
 }
 
 impl Pipelines {
-    fn initialization(&mut self) -> &ComputePipeline {
-        self.initialization.get_or_insert_with(|| {
+    fn initialization(&self) -> &ComputePipeline {
+        self.initialization.get_or_init(|| {
             let module = self.device.create_shader_module(
                 include_wgsl!(concat!(env!("OUT_DIR"), "/initialization.wgsl"))
             );
 
-            let param_layout = self.param_layouts
-                .get::<InitializationParameters>(&self.device);
-
+            let param_layout = self.param_layout::<InitializationParameters>(&self.device);
             let layout = self.device.create_pipeline_layout(
                 &PipelineLayoutDescriptor {
                     label: Some("Initialization"),
                     immediate_size: 0,
                     bind_group_layouts: &[
-                        Some(param_layout),
+                        Some(&param_layout),
                         Some(&self.tensor_output_layout)
                     ]
                 }

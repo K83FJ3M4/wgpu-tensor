@@ -13,6 +13,7 @@ pub const REQUIRED_DOWNLEVEL_FLAGS: DownlevelFlags = {
         .union(DownlevelFlags::COMPUTE_SHADERS)
 };
 
+mod cache;
 mod composite;
 mod tensor;
 mod pipelines;
@@ -35,7 +36,7 @@ pub struct TensorEncoder<'scope> {
     autograd: Option<AutogradEncoder<'scope>>,
     tensors: &'scope TensorPool,
     encoder: Encoder<'scope>,
-    rng: &'scope mut RngState
+    rng: &'scope RngState
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -85,18 +86,18 @@ impl TensorContext {
     }
 
     pub fn infer<T>(
-        &mut self,
+        &self,
         encoder: &mut CommandEncoder,
         callback: impl for<'scope> FnOnce(&mut TensorEncoder<'scope>)
             -> Result<T, TensorError>
     ) -> Result<T, TensorError> {
         let read_allocator = StagingAllocator::new(&self.read_pool);
         let write_allocator = StagingAllocator::new(&self.write_pool);
-        let encoder = Encoder::new(&mut self.encoder_pool, encoder);
+        let encoder = Encoder::new(&self.encoder_pool, encoder);
 
         callback(&mut TensorEncoder {
-            tensors: &mut self.tensors,
-            rng: &mut self.rng,
+            tensors: &self.tensors,
+            rng: &self.rng,
             autograd: None,
             read_allocator,
             write_allocator,
@@ -105,18 +106,18 @@ impl TensorContext {
     }
 
     pub fn learn(
-        &mut self,
+        &self,
         encoder: &mut CommandEncoder,
         callback: impl for<'scope> FnOnce(&mut TensorEncoder<'scope>)
             -> Result<Tensor<'scope>, TensorError>
     ) -> Result<(), TensorError> {
         let read_allocator = StagingAllocator::new(&self.read_pool);
         let write_allocator = StagingAllocator::new(&self.write_pool);
-        let encoder = Encoder::new(&mut self.encoder_pool, encoder);
+        let encoder = Encoder::new(&self.encoder_pool, encoder);
         let autograd = AutogradEncoder::new();
         let mut encoder = TensorEncoder {
-            tensors: &mut self.tensors,
-            rng: &mut self.rng,
+            tensors: &self.tensors,
+            rng: &self.rng,
             autograd: Some(autograd),
             read_allocator,
             write_allocator,

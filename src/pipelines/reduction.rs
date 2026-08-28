@@ -327,21 +327,19 @@ impl<'scope> AutogradEncoder<'scope> {
 }
 
 impl Pipelines {
-    fn reduction(&mut self) -> &ComputePipeline {
-        self.reduction.get_or_insert_with(|| {
+    fn reduction(&self) -> &ComputePipeline {
+        self.reduction.get_or_init(|| {
             let module = self.device.create_shader_module(
                 include_wgsl!(concat!(env!("OUT_DIR"), "/reduction.wgsl"))
             );
 
-            let param_layout = self.param_layouts
-                .get::<ReductionParameters>(&self.device);
-
+            let param_layout = self.param_layout::<ReductionParameters>(&self.device);
             let layout = self.device.create_pipeline_layout(
                 &PipelineLayoutDescriptor {
                     label: Some("Reduction"),
                     immediate_size: 0,
                     bind_group_layouts: &[
-                        Some(param_layout),
+                        Some(&param_layout),
                         Some(&self.tensor_input_layout),
                         Some(&self.tensor_output_layout)
                     ]

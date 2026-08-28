@@ -111,21 +111,19 @@ impl<'scope> TensorEncoder<'scope> {
 }
 
 impl Pipelines {
-    fn broadcast(&mut self) -> &ComputePipeline {
-        self.broadcast.get_or_insert_with(|| {
+    fn broadcast(&self) -> &ComputePipeline {
+        self.broadcast.get_or_init(|| {
             let module = self.device.create_shader_module(
                 include_wgsl!(concat!(env!("OUT_DIR"), "/broadcast.wgsl"))
             );
 
-            let param_layout = self.param_layouts
-                .get::<BroadcastParameters>(&self.device);
-
+            let param_layout = self.param_layout::<BroadcastParameters>(&self.device);
             let layout = self.device.create_pipeline_layout(
                 &PipelineLayoutDescriptor {
                     label: Some("Broadcast"),
                     immediate_size: 0,
                     bind_group_layouts: &[
-                        Some(param_layout),
+                        Some(&param_layout),
                         Some(&self.tensor_input_layout),
                         Some(&self.tensor_output_layout)
                     ]
