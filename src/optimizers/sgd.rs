@@ -15,7 +15,7 @@ impl OptimizerConfig for SGDConfig {
 
     fn build(
         self,
-        _: &mut TensorContext
+        _: &TensorContext
     ) -> Self::Optimizer {
         SGDOptimizer {
             learning_rate: self.learning_rate

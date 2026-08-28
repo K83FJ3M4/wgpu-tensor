@@ -11,7 +11,7 @@ pub trait OptimizerConfig {
 
     fn build(
         self,
-        context: &mut TensorContext
+        context: &TensorContext
     ) -> Self::Optimizer;
 }
 

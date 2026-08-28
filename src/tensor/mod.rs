@@ -39,7 +39,7 @@ enum TensorDomain<'scope> {
 
 impl Tensor<'static> {
     pub fn new(
-        context: &mut TensorContext,
+        context: &TensorContext,
         shape: impl IntoShape
     ) -> Result<Tensor<'static>, TensorError> {
         let shape = shape.shape();
@@ -51,7 +51,7 @@ impl Tensor<'static> {
     }
 
     pub fn new_trainable(
-        context: &mut TensorContext,
+        context: &TensorContext,
         config: impl OptimizerConfig,
         shape: impl IntoShape,
     ) -> Result<Tensor<'static>, TensorError> {

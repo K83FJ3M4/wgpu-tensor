@@ -9,7 +9,7 @@ pub struct Dense {
 
 impl Dense {
     pub fn new(
-        context: &mut TensorContext,
+        context: &TensorContext,
         input_size: u32,
         output_size: u32,
         optimizer: impl OptimizerConfig + Clone,
