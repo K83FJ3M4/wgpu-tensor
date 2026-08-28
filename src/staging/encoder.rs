@@ -1,4 +1,6 @@
 use std::num::NonZeroU64;
+use std::sync::Arc;
+
 use bytemuck::{Pod, bytes_of};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindingResource, Buffer, BufferAddress, BufferBinding, BufferDescriptor, BufferUsages, BufferViewMut, CommandEncoder, ComputePass, ComputePassDescriptor, ComputePipeline, Device, MapMode};
@@ -124,8 +126,9 @@ impl<'a> Encoder<'a> {
             ).forget_lifetime()
         });
 
+        let bind_group = self.pool.bind_group::<T>();
         compute_pass.set_bind_group(
-            0, &self.pool.bind_group::<T>(),
+            0, bind_group.as_ref(),
             &[self.gpu_offset as u32]
         );
 
@@ -168,7 +171,7 @@ impl EncoderPool {
         }
     }
 
-    fn bind_group<T: Pod>(&self) -> BindGroup {
+    fn bind_group<T: Pod>(&self) -> Arc<BindGroup> {
         let layout = self.pipelines.param_layout::<T>(&self.pipelines.device);
 
         self.bind_groups.get(size_of::<T>(), || {

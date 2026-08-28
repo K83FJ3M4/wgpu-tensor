@@ -1,37 +1,35 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 
-pub(crate) struct CacheMap<K: Hash + Eq, V: Clone> {
-    inner: Mutex<HashMap<K, V>>
+pub(crate) struct CacheMap<K: Hash + Eq, V> {
+    inner: Mutex<HashMap<K, Arc<OnceLock<Arc<V>>>>>,
 }
 
-impl<K: Hash + Eq, V: Clone> CacheMap<K, V> {
+impl<K: Hash + Eq, V> CacheMap<K, V> {
     pub(crate) fn new() -> CacheMap<K, V> {
         CacheMap {
-            inner: Mutex::new(HashMap::new())
+            inner: Mutex::new(HashMap::new()),
         }
     }
 
-    pub(crate) fn get(&self, key: K, callback: impl FnOnce() -> V) -> V {
-        let mut value = match self.inner.lock()
-            .map(|map| map.get(&key).cloned()) {
-            Ok(value) => value,
+    pub(crate) fn get(&self, key: K, callback: impl FnOnce() -> V) -> Arc<V> {
+        let mut map = match self.inner.lock() {
+            Ok(map) => map,
             Err(err) => {
                 let mut map = err.into_inner();
-                *map = HashMap::new();
+                map.clear();
                 self.inner.clear_poison();
-                None
+                map
             }
         };
 
-        let value = value.get_or_insert_with(callback)
+        let value = map
+            .entry(key)
+            .or_insert_with(|| Arc::new(OnceLock::new()))
             .clone();
+        drop(map);
 
-        if let Ok(mut map) = self.inner.lock() {
-            map.insert(key, value.clone());
-        }
-
-        value
+        value.get_or_init(|| Arc::new(callback())).clone()
     }
 }

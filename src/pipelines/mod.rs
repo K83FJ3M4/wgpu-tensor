@@ -1,5 +1,5 @@
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytemuck::{Pod, Zeroable};
@@ -111,7 +111,7 @@ impl Pipelines {
         }
     } 
 
-    pub(crate) fn param_layout<T: Pod>(&self, device: &Device) -> BindGroupLayout {
+    pub(crate) fn param_layout<T: Pod>(&self, device: &Device) -> Arc<BindGroupLayout> {
         let key = size_of::<T>();
         self.param_layouts.get(key, || {
             let param_ty = BindingType::Buffer {
