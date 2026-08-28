@@ -263,7 +263,6 @@ impl<'scope> TensorEncoder<'scope> {
         self.binary(BinaryOperation::EQUAL, lhs, rhs)
     }
 
-    //TODO masks with "select" and "greater_equal"
     fn extremum(
         &mut self,
         operation: BinaryOperation,
@@ -282,12 +281,14 @@ impl<'scope> TensorEncoder<'scope> {
             let lhs_grad = move |
                 encoder: &mut TensorEncoder<'scope>,
                 output: &Tensor<'scope>| {
-                let scaled = cell_clone.get_or_init(|| {
-                    let difference = encoder.subtract(&lhs_clone, &rhs_clone)?;
-                    encoder.divide(output, &difference)
+                let (lhs_mask, _, winner_count) = cell_clone.get_or_init(|| {
+                    let lhs_mask = encoder.equal(&lhs_clone, &res_clone)?;
+                    let rhs_mask = encoder.equal(&rhs_clone, &res_clone)?;
+                    let winner_count = encoder.add(&lhs_mask, &rhs_mask)?;
+                    Ok((lhs_mask, rhs_mask, winner_count))
                 }).clone()?;
-                let numerator = encoder.subtract(&res_clone, &rhs_clone)?;
-                encoder.multiply(&scaled, &numerator)
+                let gradient = encoder.multiply(output, &lhs_mask)?;
+                encoder.divide(&gradient, &winner_count)
             };
 
             let lhs_clone = lhs.clone();
@@ -296,12 +297,14 @@ impl<'scope> TensorEncoder<'scope> {
             let rhs_grad = move |
                 encoder: &mut TensorEncoder<'scope>,
                 output: &Tensor<'scope>| {
-                let scaled = cell.get_or_init(|| {
-                    let difference = encoder.subtract(&lhs_clone, &rhs_clone)?;
-                    encoder.divide(output, &difference)
+                let (_, rhs_mask, winner_count) = cell.get_or_init(|| {
+                    let lhs_mask = encoder.equal(&lhs_clone, &res_clone)?;
+                    let rhs_mask = encoder.equal(&rhs_clone, &res_clone)?;
+                    let winner_count = encoder.add(&lhs_mask, &rhs_mask)?;
+                    Ok((lhs_mask, rhs_mask, winner_count))
                 }).clone()?;
-                let numerator = encoder.subtract(&lhs_clone, &res_clone)?;
-                encoder.multiply(&scaled, &numerator)
+                let gradient = encoder.multiply(output, &rhs_mask)?;
+                encoder.divide(&gradient, &winner_count)
             };
 
             autograd.backwards_binary(
