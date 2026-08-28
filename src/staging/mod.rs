@@ -1,7 +1,7 @@
 use crate::staging::allocator::StagingChunk;
 use crate::{Tensor, TensorEncoder, TensorError};
 pub(crate) use allocator::{StagingAllocator, StagingAllocatorPool};
-pub use reader::{TensorReader, PrintTensorReader};
+pub use reader::{TensorReceiver, TensorChunks, TensorReader, F32Iter};
 pub(crate) use encoder::{Encoder, EncoderPool};
 pub use writer::TensorWriter;
 
@@ -46,7 +46,7 @@ impl<'scope> TensorEncoder<'scope> {
         writer.finish()
     }
 
-    pub fn read(&mut self, tensor: &Tensor, mut reader: impl TensorReader) {
+    pub fn read(&mut self, tensor: &Tensor) -> TensorReceiver {
         let mut offset = 0;
         let mut length = Tensor::buffer_size(tensor.shape()).unwrap().get();
         let mut chunks = Vec::new();
@@ -69,21 +69,11 @@ impl<'scope> TensorEncoder<'scope> {
             chunks.push(chunk.unmap());
         }
 
-        let mut size = Tensor::data_size(tensor.shape()).unwrap() as usize;
-        self.encoder.command().on_submitted_work_done(move || {
-            if !chunks.iter().all(StagingChunk::mapped) { reader.error() }
-            for slice in chunks.iter().map(StagingChunk::slice) { 
-                if let Ok(range) = slice.get_mapped_range() {
-                    let length = range.len().min(size);
-                    reader.read(&range[..length]);
-                    size -= length;
-                } else {
-                    reader.error();
-                    break;
-                }
-            }
-
-            reader.finish();
-        });
+        let size = Tensor::data_size(tensor.shape()).unwrap() as usize;
+        TensorReceiver {
+            views: None,
+            chunks,
+            size
+        } 
     }
 }

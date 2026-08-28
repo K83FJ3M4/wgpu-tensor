@@ -2,7 +2,8 @@ use std::iter::repeat;
 
 use wgpu::{Backends, DeviceDescriptor, ExperimentalFeatures, Instance, InstanceDescriptor, InstanceFlags, MemoryHints, PollType, PowerPreference, RequestAdapterOptions, Trace};
 use pollster::FutureExt;
-use wgpu_tensor::{OPTIONAL_FEATURES, REQUIRED_DOWNLEVEL_FLAGS, REQUIRED_LIMITS, PrintTensorReader, Tensor, TensorContext};
+use wgpu_tensor::staging::F32Iter;
+use wgpu_tensor::{OPTIONAL_FEATURES, REQUIRED_DOWNLEVEL_FLAGS, REQUIRED_LIMITS, Tensor, TensorContext};
 
 fn main() {
     let instance = Instance::new(InstanceDescriptor {
@@ -37,7 +38,7 @@ fn main() {
     let tensor_b = Tensor::new(&mut context, 4).unwrap();
  
     let mut encoder = device.create_command_encoder(&Default::default());
-    context.infer(&mut encoder, |encoder| {
+    let mut result = context.infer(&mut encoder, |encoder| {
         encoder.write(&tensor_a, repeat(2.0).take(4))?;
         encoder.write(&tensor_b, repeat(10.0).take(4))?;
 
@@ -45,7 +46,7 @@ fn main() {
         let output = encoder.reciprocal_square_root(&output)?;
         let output = encoder.sum(&output, 0)?;
 
-        Ok(encoder.read(&output, PrintTensorReader::new()))
+        Ok(encoder.read(&output))
     }).unwrap();
 
     let index = queue.submit(Some(encoder.finish()));
@@ -53,4 +54,8 @@ fn main() {
         submission_index: Some(index),
         timeout: None
     }).unwrap();
+
+    for x in result.try_recv::<F32Iter>().unwrap() {
+        println!("{x:?}")
+    }
 }

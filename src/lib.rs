@@ -1,5 +1,4 @@
 pub use tensor::{Tensor, IntoShape, IntoIndices, Shape};
-pub use staging::{TensorReader, TensorWriter, PrintTensorReader};
 use wgpu::{BufferView, BufferViewMut, CommandEncoder, Device, DownlevelFlags, Features, Limits};
 
 use crate::optimizers::AutogradEncoder;
@@ -16,9 +15,9 @@ pub const REQUIRED_DOWNLEVEL_FLAGS: DownlevelFlags = {
 
 mod composite;
 mod tensor;
-mod staging;
 mod pipelines;
 
+pub mod staging;
 pub mod optimizers;
 pub mod layers;
 
@@ -51,6 +50,8 @@ pub enum TensorError {
     TrainableWriteDuringLearning,
     InsufficientData,
     ExcessData,
+    StagingBufferNotMapped,
+    StagingBufferMapFailed
 }
 
 impl<'scope> TensorEncoder<'scope> {

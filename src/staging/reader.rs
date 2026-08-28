@@ -1,54 +1,94 @@
-use std::io::{self, Write};
+use std::slice::Iter;
+use bytemuck::cast_slice;
+use wgpu::BufferView;
 
-pub trait TensorReader: Send + 'static {
-    fn read(&mut self, data: &[u8]);
-    fn finish(&mut self) {}
-    fn error(&mut self) {}
+use crate::TensorError;
+use crate::staging::StagingChunk;
+
+pub trait TensorReader<'a>: Sized {
+    fn new(chunks: TensorChunks<'a>) -> Result<Self, TensorError>;
 }
 
-#[derive(Default)]
-pub struct PrintTensorReader {
-    started: bool,
-    has_values: bool
+pub struct TensorReceiver {
+    pub(super) views: Option<Vec<BufferView>>,
+    pub(super) chunks: Vec<StagingChunk<BufferView>>,
+    pub(super) size: usize
 }
 
-impl PrintTensorReader {
-    pub fn new() -> PrintTensorReader {
-        PrintTensorReader::default()
-    }
+pub struct TensorChunks<'a> {
+    views: Iter<'a, BufferView>,
+    size: usize
 }
 
-impl TensorReader for PrintTensorReader {
-    fn read(&mut self, data: &[u8]) {
-        assert!(data.len().is_multiple_of(size_of::<f32>()));
+pub struct F32Iter<'a> {
+    chunks: TensorChunks<'a>,
+    chunk: Option<&'a [f32]>
+}
 
-        let stdout = io::stdout();
-        let mut stdout = stdout.lock();
+impl TensorReceiver {
+    pub fn try_recv<'a, T: TensorReader<'a>>(&'a mut self) -> Result<T, TensorError> {
+        if !self.chunks.iter().all(StagingChunk::mapped) {
+            return Err(TensorError::StagingBufferNotMapped)
+        } 
 
-        if !self.started {
-            write!(stdout, "[").unwrap();
-            self.started = true;
-        }
-
-        for bytes in data.chunks_exact(size_of::<f32>()) {
-            if self.has_values {
-                write!(stdout, ", ").unwrap();
+        let views = match self.views.take() {
+            Some(views) => views,
+            None => {
+                let mut views = Vec::new();
+                for chunk in self.chunks.iter() {
+                    let slice = chunk.slice();
+                    let view = slice.get_mapped_range()
+                        .map_err(|_| TensorError::StagingBufferMapFailed)?;
+                    views.push(view);
+                }
+                views
             }
+        };
 
-            let value = f32::from_ne_bytes(bytes.try_into().unwrap());
-            write!(stdout, "{value:?}").unwrap();
-            self.has_values = true;
-        }
+        let views = self.views.insert(views);
+
+        Ok(T::new(TensorChunks {
+            size: self.size,
+            views: views.iter()
+        })?)
     }
+}
 
-    fn finish(&mut self) {
-        let stdout = io::stdout();
-        let mut stdout = stdout.lock();
+impl<'a> Iterator for TensorChunks<'a> {
+    type Item = &'a [u8];
 
-        if self.started {
-            writeln!(stdout, "]").unwrap();
-        } else {
-            writeln!(stdout, "[]").unwrap();
-        }
+    fn next(&mut self) -> Option<Self::Item> {
+        let view = self.views.next()?;
+        let length = view.len().min(self.size);
+        let view = &view[..length];
+        self.size -= view.len();
+        Some(view)
+    }
+}
+
+impl<'a> TensorReader<'a> for F32Iter<'a> {
+    fn new(chunks: TensorChunks<'a>) -> Result<Self, TensorError> {
+        Ok(Self {
+            chunks,
+            chunk: None
+        })
+    }
+}
+
+impl<'a> Iterator for F32Iter<'a> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some((item, remainder)) = self.chunk
+                .map(<[f32]>::split_first)
+                .flatten() {
+                self.chunk = Some(remainder);
+                return Some(*item)
+            } else {
+                let chunk = self.chunks.next()?;
+                self.chunk = Some(cast_slice(chunk));
+            }
+        } 
     }
 }
